@@ -31,7 +31,7 @@ class HsvVisionNode(Node):
             # 기존 모델 로드
             self.declare_parameter('supply_model_path', './tracking2.pt')
             self.declare_parameter('marker_model_path', './vision_enemy.pt')
-            self.declare_parameter('new_model_path', './traffic_light.pt')
+            self.declare_parameter('traffic_model_path', './traffic_light.pt')
             supply_model_path = self.get_parameter('supply_model_path').get_parameter_value().string_value
             self.supply_model = YOLO(supply_model_path).to(self.device)
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
@@ -39,8 +39,8 @@ class HsvVisionNode(Node):
             self.marker_class_names = ['A', 'E', 'Enemy', 'Heart', 'K', 'M', 'O', 'R', 'ROKA',  'Y']
 
 
-            new_model_path = self.get_parameter('new_model_path').get_parameter_value().string_value
-            self.new_detection_model = YOLO(new_model_path).to(self.device)
+            traffic_model_path = self.get_parameter('traffic_model_path').get_parameter_value().string_value
+            self.new_detection_model = YOLO(traffic_model_path).to(self.device)
             self.new_model_class_names = ['red', 'green']
 
         except Exception as e:
