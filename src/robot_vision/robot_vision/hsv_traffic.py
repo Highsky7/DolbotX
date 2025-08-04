@@ -40,8 +40,8 @@ class HsvVisionNode(Node):
 
 
             traffic_model_path = self.get_parameter('traffic_model_path').get_parameter_value().string_value
-            self.new_detection_model = YOLO(traffic_model_path).to(self.device)
-            self.new_model_class_names = ['red', 'green']
+            self.traffic_detection_model = YOLO(traffic_model_path).to(self.device)
+            self.traffic_model_class_names = ['red', 'green']
 
         except Exception as e:
             self.get_logger().error(f"Failed to load YOLO models: {e}")
@@ -146,9 +146,9 @@ class HsvVisionNode(Node):
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False)
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
             
-            # 2. 새로운 new_detection_model 추론 및 결과 그리기
-            results_new = self.new_detection_model(cv_image, conf=0.5, iou=0.45, verbose=False)
-            annotated_image = self.draw_new_detections(annotated_image, results_new)
+            # 2. 새로운 traffic_detection_model 추론 및 결과 그리기
+            results_traffic = self.traffic_detection_model(cv_image, conf=0.5, iou=0.45, verbose=False)
+            annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
 
             # 3. 최종 결과 이미지 발행
             self.publish_compressed_viz(self.usb_cam_viz_pub, annotated_image)
@@ -174,12 +174,12 @@ class HsvVisionNode(Node):
         return image
 
     # <<< [추가] 새로운 모델의 탐지 결과를 시각화하는 함수 >>>
-    def draw_new_detections(self, image, results):
+    def draw_traffic_detections(self, image, results):
         for result in results:
             for box in result.boxes.cpu().numpy():
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf, cls_id = box.conf[0], int(box.cls[0])
-                label = self.new_model_class_names[cls_id] if cls_id < len(self.new_model_class_names) else "Unknown"
+                label = self.traffic_model_class_names[cls_id] if cls_id < len(self.traffic_model_class_names) else "Unknown"
                 # 파란색(255, 0, 0)으로 바운딩 박스를 그려 기존 탐지와 구분합니다.
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
                 cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
