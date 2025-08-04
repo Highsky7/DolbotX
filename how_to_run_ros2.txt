@@ -1,0 +1,4 @@
+1. realros
+2. sudo udevadm trigger -> ros2 launch usb_cam camera.launch.py
+3. ros2 run robot_vision yolo_traffic
+4. ros2 run robot_vision yolo_path_planner_pp
