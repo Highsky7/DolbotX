@@ -13,6 +13,7 @@
   <depend>nav_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>tf2_ros</depend>
+  <depend>tf_transformations</depend>
   <depend>message_filters</depend>
 
   <test_depend>ament_copyright</test_depend>
