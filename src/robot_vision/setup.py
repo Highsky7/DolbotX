@@ -26,6 +26,8 @@ setup(
             'yolo_path_planner = robot_vision.yolo_path_planning:main',
             'yolo_path_planner_pp = robot_vision.yolo_path_planning_pp:main',
             'yolo_traffic = robot_vision.yolo_traffic:main',
+            'bev_utilis = robot_vision.utils.bev_utils_y_auto:main',
+            'hsv_picker = robot_vision.utils.hsv_picker:main'
         ],
     },
 )
