@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: yolo_path_planning_node.py (Corrected and Integrated with Pure Pursuit)
+# FILE: yolo_path_planning_node_integrated.py
+# DESCRIPTION: YOLO 모델을 이용한 주행 영역 인식과 경로 생성을 하나의 노드로 통합한 버전입니다.
 
 import rclpy
 from rclpy.node import Node
@@ -10,35 +11,54 @@ import tf2_ros
 from tf_transformations import quaternion_matrix
 import message_filters
 import math
+import torch
+from ultralytics import YOLO
 
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Float64  # [추가] 조향각 메시지 타입
+from std_msgs.msg import Float64
 from cv_bridge import CvBridge
 
 class YoloPathPlanningNode(Node):
     def __init__(self):
         super().__init__('yolo_path_planning_pp_node')
-        self.get_logger().info("--- YOLO Path Planning Node with Pure Pursuit Control ---")
+        self.get_logger().info("--- YOLO Path Planning Node (Integrated Mask Generation) ---")
         self.bridge = CvBridge()
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.get_logger().info(f"Using compute device: {self.device}")
 
-        # --- 기존 파라미터 ---
+        # --- 경로 계획 및 Pure Pursuit 파라미터 ---
         self.declare_parameter('robot_base_frame', 'base_link')
         self.declare_parameter('path_lookahead', 3.0)
         self.declare_parameter('num_path_points', 20)
         self.declare_parameter('smoothing_factor', 0.4)
+        self.declare_parameter('pp_lookahead_distance', 1.0)
+        self.declare_parameter('wheelbase', 0.58)
+        
         self.robot_base_frame = self.get_parameter('robot_base_frame').get_parameter_value().string_value
         self.path_lookahead = self.get_parameter('path_lookahead').get_parameter_value().double_value
         self.num_path_points = self.get_parameter('num_path_points').get_parameter_value().integer_value
         self.smoothing_factor = self.get_parameter('smoothing_factor').get_parameter_value().double_value
-
-        # --- [추가] Pure Pursuit 파라미터 ---
-        self.declare_parameter('pp_lookahead_distance', 1.0)
-        self.declare_parameter('wheelbase', 0.58)
         self.pp_lookahead_distance = self.get_parameter('pp_lookahead_distance').get_parameter_value().double_value
         self.wheelbase = self.get_parameter('wheelbase').get_parameter_value().double_value
 
+        # --- [추가] YOLO 주행 영역 모델 파라미터 ---
+        try:
+            self.declare_parameter('yolo_model_path', './weights.pt')
+            self.declare_parameter('yolo_confidence', 0.5)
+            self.declare_parameter('drivable_class_index', 0)
+            
+            yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
+            self.path_model = YOLO(yolo_model_path).to(self.device)
+            self.yolo_confidence = self.get_parameter('yolo_confidence').get_parameter_value().double_value
+            self.drivable_class_index = self.get_parameter('drivable_class_index').get_parameter_value().integer_value
+            self.get_logger().info(f"Successfully loaded YOLO path model from: {yolo_model_path}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to load YOLO path model: {e}")
+            self.destroy_node()
+            return
+            
         self.scaled_camera_intrinsics = None
         self.smoothed_path_points_3d = None
 
@@ -46,31 +66,55 @@ class YoloPathPlanningNode(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
-        # [수정] Publisher 추가: 생성된 경로(디버깅용)와 최종 조향각
         self.path_pub = self.create_publisher(Path, '/competition_path_yolo', 1)
         self.steer_pub = self.create_publisher(Float64, '/steering_angle', 1)
+        # [추가] 디버깅용 마스크 Publisher
+        self.mask_pub_debug = self.create_publisher(Image, '/path_planning/yolo/mask_debug', 1)
+        self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/yolo/viz/compressed', 1)
 
-        mask_topic = '/path_planning/yolo/mask'
-        depth_topic = '/path_planning/yolo/depth'
-        info_topic = '/path_planning/yolo/info'
-        mask_sub = message_filters.Subscriber(self, Image, mask_topic)
+        # [수정] Raw 카메라 토픽을 직접 구독
+        realsense_img_topic = '/camera/color/image_raw/compressed'
+        depth_topic = "/camera/aligned_depth_to_color/image_raw"
+        info_topic = "/camera/color/camera_info"
+        
+        realsense_img_sub = message_filters.Subscriber(self, CompressedImage, realsense_img_topic)
         depth_sub = message_filters.Subscriber(self, Image, depth_topic)
         info_sub = message_filters.Subscriber(self, CameraInfo, info_topic)
         
-        self.ts = message_filters.ApproximateTimeSynchronizer([mask_sub, depth_sub, info_sub], queue_size=10, slop=0.5)
+        self.ts = message_filters.ApproximateTimeSynchronizer([realsense_img_sub, depth_sub, info_sub], queue_size=10, slop=0.5)
         self.ts.registerCallback(self.planning_callback)
         
-        self.get_logger().info(f"Subscribing to intermediate topics: {mask_topic}, {depth_topic}, {info_topic}")
-        self.get_logger().info("✅ YOLO Path Planning Node with Pure Pursuit initialized successfully.")
+        self.get_logger().info("✅ YOLO Path Planning Node (Integrated) initialized successfully.")
 
-    def planning_callback(self, mask_msg, depth_msg, info_msg):
+    def planning_callback(self, compressed_img_msg, depth_msg, info_msg):
         try:
-            cv_mask = self.bridge.imgmsg_to_cv2(mask_msg, "mono8")
+            # 1. 이미지 처리 및 주행 가능 영역 마스크 생성
+            np_arr = np.frombuffer(compressed_img_msg.data, np.uint8)
+            cv_color = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            proc_height, proc_width, _ = cv_color.shape
+            
+            # YOLO 모델을 사용하여 마스크 생성
+            cv_mask = self.create_yolo_drivable_mask(cv_color, proc_width, proc_height)
+            if cv_mask is None:
+                self.get_logger().warn("Drivable area mask could not be generated.", throttle_duration_sec=2.0)
+                return
+
+            # 디버깅용으로 생성된 마스크 발행
+            self.mask_pub_debug.publish(self.bridge.cv2_to_imgmsg(cv_mask, "mono8"))
+            # --- [신규] 시각화 이미지 생성 및 발행 로직 ---
+            viz_image = cv_color.copy()
+            # 마스크 영역을 초록색으로 표시
+            viz_image[cv_mask > 0] = cv2.addWeighted(viz_image[cv_mask > 0], 0.5, np.full_like(viz_image[cv_mask > 0], (0, 255, 0)), 0.5, 0)
+            viz_msg = self.bridge.cv2_to_compressed_imgmsg(viz_image)
+            viz_msg.header = compressed_img_msg.header
+            self.viz_pub.publish(viz_msg)
+            # --- 시각화 로직 종료 ---
             cv_depth = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")
             
             if self.scaled_camera_intrinsics is None:
                 self.scale_camera_info(depth_msg, info_msg)
 
+            # 2. 마스크로부터 3D 경로점 생성
             contours, _ = cv2.findContours(cv_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours: return
 
@@ -79,11 +123,31 @@ class YoloPathPlanningNode(Node):
             
             if points_3d.shape[0] < 50: return
             
-            # [수정] 함수 이름 변경 및 로직 흐름 명확화
-            self.generate_and_follow_path(points_3d, mask_msg.header)
+            # 3. 경로 추종 및 조향각 계산
+            self.generate_and_follow_path(points_3d, compressed_img_msg.header)
 
         except Exception as e:
             self.get_logger().error(f"Error in planning callback: {e}", exc_info=True)
+
+    # --- [신규] YOLO 주행 가능 영역 마스크 생성 함수 ---
+    def create_yolo_drivable_mask(self, color_image, width, height):
+        results = self.path_model(color_image, conf=self.yolo_confidence, verbose=False)
+        result = results[0]
+        if result.masks is None: return None
+        
+        final_mask = np.zeros((height, width), dtype=np.uint8)
+        # drivable_class_index에 해당하는 클래스만 필터링
+        drivable_indices = np.where(result.boxes.cls.cpu().numpy() == self.drivable_class_index)[0]
+        if len(drivable_indices) == 0: return None
+        
+        for idx in drivable_indices:
+            mask_data = result.masks.data.cpu().numpy()[idx]
+            # 모델 출력 마스크 크기가 이미지 크기와 다를 수 있으므로 리사이즈
+            resized_mask = cv2.resize(mask_data, (width, height), interpolation=cv2.INTER_NEAREST)
+            # 마스크를 0-255 범위로 변환하고 final_mask에 중첩
+            final_mask = np.maximum(final_mask, (resized_mask * 255).astype(np.uint8))
+            
+        return final_mask
 
     def scale_camera_info(self, depth_msg, info_msg):
         proc_width, proc_height = depth_msg.width, depth_msg.height
@@ -148,7 +212,6 @@ class YoloPathPlanningNode(Node):
             else:
                 self.smoothed_path_points_3d = self.smoothing_factor * np.array(raw_path) + (1 - self.smoothing_factor) * self.smoothed_path_points_3d
             
-            # --- 경로 시각화 메시지 발행 (디버깅용) ---
             path_msg = Path(header=header)
             path_msg.header.frame_id = self.robot_base_frame
             for p in self.smoothed_path_points_3d:
@@ -158,40 +221,20 @@ class YoloPathPlanningNode(Node):
                 path_msg.poses.append(pose)
             self.path_pub.publish(path_msg)
             
-            # --- [추가] Pure Pursuit 로직 호출 ---
             self.calculate_and_publish_steering(self.smoothed_path_points_3d)
 
         except tf2_ros.TransformException as e:
             self.get_logger().warn(f"TF lookup failed: {e}", throttle_duration_sec=2.0)
 
-    # --- [신규] Pure Pursuit 조향각 계산 및 발행 함수 ---
     def calculate_and_publish_steering(self, path_points):
-        """
-        생성된 경로(base_link 기준)를 받아 Pure Pursuit 알고리즘으로 조향각을 계산합니다.
-        """
-        # 1. 목표 지점(Goal Point) 찾기
-        # 로봇(0,0)에서 각 경로점까지의 거리를 계산
         dists = np.linalg.norm(path_points[:, :2], axis=1)
-        
-        # 전방 주시 거리(lookahead_distance)와 가장 가까운 경로점을 목표 지점으로 선택
-        # np.argmin은 |dists - Ld|가 최소가 되는 인덱스를 반환
         goal_idx = np.argmin(np.abs(dists - self.pp_lookahead_distance))
         goal_point = path_points[goal_idx]
-        
-        # 2. 조향각 계산
-        # 목표 지점 (goal_x, goal_y)는 로봇의 base_link 좌표계에 있음
         goal_x, goal_y = goal_point[0], goal_point[1]
         
-        # 로봇의 현재 헤딩과 목표 지점 사이의 각도(alpha) 계산
-        # alpha는 로봇 전방 방향과 목표 지점을 잇는 선 사이의 각도
         alpha = math.atan2(goal_y, goal_x)
-        
-        # Pure Pursuit 공식: delta = atan(2 * L * sin(alpha) / |V|)
-        # 여기서는 |V|(속도) 대신 전방 주시 거리를 사용하여 곡률을 계산
-        # 조향각(delta) = atan2(2 * wheelbase * sin(alpha), lookahead_distance)
         steering_angle = math.atan2(2.0 * self.wheelbase * math.sin(alpha), self.pp_lookahead_distance)
         
-        # 3. 조향각 발행
         steer_msg = Float64()
         steer_msg.data = steering_angle
         self.steer_pub.publish(steer_msg)
