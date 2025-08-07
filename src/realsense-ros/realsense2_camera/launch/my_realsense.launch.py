@@ -28,7 +28,7 @@ def generate_launch_description():
             'publish_robot_description': 'false', # Realsense 노드가 자체 URDF를 발행하지 않도록 설정
             
             # ROS 1의 align_depth와 동일한 기능
-            'align_depth.enable': 'true', 
+            'align_depth.enable': 'true',
             
             # 포인트 클라우드 활성화
             'pointcloud.enable': 'true',
@@ -44,10 +44,10 @@ def generate_launch_description():
             # 수정 사항: ROS 2에 맞는 프로파일 인자 이름으로 변경
             # =======================================================================
             # depth_module.profile -> depth_profile
-            'depth_profile': '640x480x30',
+            'depth_module.profile': '640x480x30',
             
             # rgb_camera.profile -> rgb_camera_profile
-            'rgb_camera_profile': '640x480x30',
+            'rgb_camera.profile': '640x480x30',
         }.items()
     )
 
@@ -57,7 +57,7 @@ def generate_launch_description():
     urdf_file_path = os.path.join(
         get_package_share_directory('realsense2_description'),
         'urdf',
-        'test_d435_camera.urdf.xacro'
+        'test_d435i_camera.urdf.xacro'
     )
     
     robot_description_content = xacro.process_file(
