@@ -30,7 +30,7 @@ class HsvPathPlanningNode(Node):
         self.declare_parameter('path_lookahead', 3.0)
         self.declare_parameter('num_path_points', 20)
         self.declare_parameter('smoothing_factor', 0.5)
-        self.declare_parameter('pp_lookahead_distance', 1.0)
+        self.declare_parameter('pp_lookahead_distance', 0.7)
         self.declare_parameter('wheelbase', 0.58)
 
         self.robot_base_frame = self.get_parameter('robot_base_frame').get_parameter_value().string_value
