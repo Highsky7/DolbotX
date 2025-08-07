@@ -180,16 +180,16 @@ class YoloVisionNode(Node):
         results = self.supply_model(color_image, verbose=False)
         for box in results[0].boxes:
             if int(box.cls) == 0:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cx = (x1 + x2) // 2
-                cy = (y1 + y2) // 2
+                x1, y1, x2, y2 = map(int, box.xyxy[0]) # Extract bounding box coordinates
+                cx = (x1 + x2) // 2 # Calculate center x coordinate
+                cy = (y1 + y2) // 2 # Calculate center y coordinate
                 if 0 <= cy < depth_image.shape[0] and 0 <= cx < depth_image.shape[1]:
                     depth_in_meters = depth_image[cy, cx] / 1000.0
                     if depth_in_meters > 0:
                         fx, fy, ppx, ppy = self.scaled_camera_intrinsics['fx'], self.scaled_camera_intrinsics['fy'], self.scaled_camera_intrinsics['ppx'], self.scaled_camera_intrinsics['ppy']
-                        x = (cx - ppx) * depth_in_meters / fx
-                        y = (cy - ppy) * depth_in_meters / fy
-                        point_msg = Point(x=depth_in_meters, y=-x, z=-y)
+                        x = (cx - ppx) * depth_in_meters / fx   # Calculate x coordinate in meters with intrinsics parameters
+                        y = (cy - ppy) * depth_in_meters / fy # Calculate y coordinate in meters with intrinsics parameters
+                        point_msg = Point(x=depth_in_meters, y=-x, z=-y) # Transform to ROS coordinate system
                         self.distance_pub.publish(point_msg)
                         label = f"Supply Box: x={point_msg.x:.2f}m, y={point_msg.y:.2f}m, z={point_msg.z:.2f}m"
                         cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 255, 255), 2)
