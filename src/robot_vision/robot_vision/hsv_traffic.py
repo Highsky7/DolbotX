@@ -32,7 +32,7 @@ class HsvVisionNode(Node):
         try:
             # 사용할 모델(보급품, 마커, 신호등)만 로드
             self.declare_parameter('supply_model_path', './tracking.pt')
-            self.declare_parameter('marker_model_path', './vision_enemy.pt')
+            self.declare_parameter('marker_model_path', './vision_enemy2.pt')
             self.declare_parameter('traffic_model_path', './traffic_light.pt')
             
             supply_model_path = self.get_parameter('supply_model_path').get_parameter_value().string_value

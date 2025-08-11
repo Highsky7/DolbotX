@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: yolo_vision_node_modified.py
-# DESCRIPTION: 주행 영역 탐지 로직을 제거하고 핵심 탐지 모델(보급품, 마커, 신호등)에 집중하도록 수정한 버전입니다.
+# FILE: yolo_traffic_modified.py
 
 import rclpy
 from rclpy.node import Node
@@ -11,14 +10,14 @@ import torch
 from ultralytics import YOLO
 import message_filters
 
-from sensor_msgs.msg import Image, CameraInfo, CompressedImage
+from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
 
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node')
-        self.get_logger().info("--- YOLO Vision Node (Modified) ---")
+        self.get_logger().info("--- YOLO Vision Node (Image Raw) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"Using compute device: {self.device}")
@@ -53,43 +52,41 @@ class YoloVisionNode(Node):
 
         self.scaled_camera_intrinsics = None
         
-        # Publisher 선언 (주행 영역 관련 Publisher 제거)
+        # Publisher 선언 (Image 타입으로 변경)
         self.distance_pub = self.create_publisher(Point, '/supply_distance', 1)
-        self.realsense_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/realsense/viz/compressed', 1)
-        self.usb_cam_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam/viz/compressed', 1)
+        self.realsense_viz_pub = self.create_publisher(Image, '/unified_vision/realsense/viz', 1)
+        self.usb_cam_viz_pub = self.create_publisher(Image, '/unified_vision/usb_cam/viz', 1)
 
-        # Subscriber 선언 (구조는 유지)
-        realsense_img_topic = '/camera/color/image_raw/compressed'
+        # Subscriber 선언 (Image 타입으로 변경)
+        realsense_img_topic = '/camera/color/image_raw' # raw 이미지 토픽
         depth_topic = "/camera/aligned_depth_to_color/image_raw"
         info_topic = "/camera/color/camera_info"
-        realsense_img_sub = message_filters.Subscriber(self, CompressedImage, realsense_img_topic)
+        realsense_img_sub = message_filters.Subscriber(self, Image, realsense_img_topic) # CompressedImage -> Image
         depth_sub = message_filters.Subscriber(self, Image, depth_topic)
         info_sub = message_filters.Subscriber(self, CameraInfo, info_topic)
         
         self.ts = message_filters.ApproximateTimeSynchronizer([realsense_img_sub, depth_sub, info_sub], queue_size=5, slop=0.5)
         self.ts.registerCallback(self.realsense_callback)
         
-        usb_cam_topic = 'camera1/image_compressed'
-        self.usb_cam_sub = self.create_subscription(CompressedImage, usb_cam_topic, self.usb_cam_callback, 1)
+        usb_cam_topic = '/camera1/image_raw' # raw 이미지 토픽
+        self.usb_cam_sub = self.create_subscription(Image, usb_cam_topic, self.usb_cam_callback, 1) # CompressedImage -> Image
         
         self.get_logger().info("✅ YOLO Vision Node initialized successfully.")
 
-    def realsense_callback(self, compressed_image_msg, depth_msg, info_msg):
+    def realsense_callback(self, image_msg, depth_msg, info_msg):
         try:
-            np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
-            cv_color = cv2.resize(cv2.imdecode(np_arr, cv2.IMREAD_COLOR), (self.proc_width, self.proc_height))
+            # CompressedImage 디코딩 로직 제거, CvBridge로 바로 변환
+            cv_color_orig = self.bridge.imgmsg_to_cv2(image_msg, 'bgr8')
+            cv_color = cv2.resize(cv_color_orig, (self.proc_width, self.proc_height))
             cv_depth = cv2.resize(self.bridge.imgmsg_to_cv2(depth_msg, '16UC1'), (self.proc_width, self.proc_height), interpolation=cv2.INTER_NEAREST)
             
             if self.scaled_camera_intrinsics is None:
                 self.scale_camera_info(info_msg)
             
-            # 보급품 추적 알고리즘 실행
             self.run_supply_tracking(cv_color, cv_depth)
             
-            # 주행 가능 영역 탐지 및 마스킹 로직 전체 제거
-            
             # 시각화 이미지 발행
-            self.publish_compressed_viz(self.realsense_viz_pub, cv_color)
+            self.publish_image_viz(self.realsense_viz_pub, cv_color)
             
         except Exception as e:
             self.get_logger().error(f"Error in Realsense callback: {e}", exc_info=True)
@@ -102,8 +99,6 @@ class YoloVisionNode(Node):
             'ppx': info_msg.k[2] * scale_x, 'ppy': info_msg.k[5] * scale_y
         }
         self.get_logger().info(f"Cam intrinsics scaled for vision node: {self.scaled_camera_intrinsics}")
-
-    # 주행 가능 영역 마스크 생성 함수(create_yolo_drivable_mask) 완전 제거
 
     def run_supply_tracking(self, color_image, depth_image):
         if self.scaled_camera_intrinsics is None: return
@@ -125,29 +120,27 @@ class YoloVisionNode(Node):
                         cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 255, 255), 2)
                         cv2.putText(color_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
     
-    def usb_cam_callback(self, compressed_msg):
+    def usb_cam_callback(self, msg):
         try:
-            np_arr = np.frombuffer(compressed_msg.data, np.uint8)
-            cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            # CompressedImage 디코딩 로직 제거, CvBridge로 바로 변환
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             
-            # 1. marker_model(vision_enemy.pt) 추론 및 결과 그리기
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False)
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
             
-            # 2. traffic_detection_model 추론 및 결과 그리기
             results_traffic = self.traffic_detection_model(cv_image, conf=0.5, iou=0.45, verbose=False)
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
 
-            # 3. 최종 결과 이미지 발행
-            self.publish_compressed_viz(self.usb_cam_viz_pub, annotated_image)
+            # 최종 결과 이미지 발행
+            self.publish_image_viz(self.usb_cam_viz_pub, annotated_image)
         except Exception as e:
             self.get_logger().error(f"Error in USB Cam callback: {e}")
 
-    def publish_compressed_viz(self, publisher, cv_image):
-        msg = CompressedImage()
+    # CompressedImage 발행 함수를 Image 발행 함수로 변경
+    def publish_image_viz(self, publisher, cv_image):
+        # cv2_to_imgmsg를 사용하여 OpenCV 이미지를 Image 메시지로 변환
+        msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.format = "jpeg"
-        msg.data = np.array(cv2.imencode('.jpg', cv_image)[1]).tobytes()
         publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):

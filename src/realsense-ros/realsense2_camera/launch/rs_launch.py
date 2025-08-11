@@ -55,7 +55,7 @@ configurable_parameters = [{'name': 'camera_name',                  'default': '
                            {'name': 'colorizer.enable',             'default': 'false', 'description': "''"},
                            {'name': 'clip_distance',                'default': '-2.', 'description': "''"},                           
                            {'name': 'linear_accel_cov',             'default': '0.01', 'description': "''"},                           
-                           {'name': 'initial_reset',                'default': 'true', 'description': "''"},                           
+                           {'name': 'initial_reset',                'default': 'false', 'description': "''"},                           
                            {'name': 'allow_no_texture_points',      'default': 'false', 'description': "''"},                           
                            {'name': 'pointcloud.ordered_pc',        'default': 'false', 'description': ''},
                            {'name': 'publish_tf',                   'default': 'true', 'description': '[bool] enable/disable publishing static & dynamic TF'},

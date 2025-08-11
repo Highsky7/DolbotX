@@ -22,8 +22,10 @@ setup(
         'console_scripts': [
             'hsv_path_planner_pp = robot_vision.hsv_path_planning_pp:main',
             'hsv_traffic = robot_vision.hsv_traffic:main',
+            'hsv_traffic_raw = robot_vision.hsv_traffic_raw:main',
             'yolo_path_planner_pp = robot_vision.yolo_path_planning_pp:main',
             'yolo_traffic = robot_vision.yolo_traffic:main',
+            'yolo_traffic_raw = robot_vision.yolo_traffic_raw:main',
             'bev_utilis = robot_vision.utils.bev_utils_y_auto:main',
             'hsv_picker = robot_vision.utils.hsv_picker:main'
         ],

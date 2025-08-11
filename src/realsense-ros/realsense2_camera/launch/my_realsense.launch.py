@@ -28,7 +28,8 @@ def generate_launch_description():
             # 자체 TF 발행 기능은 비활성화하여 충돌을 막습니다.
             # 'publish_robot_description'은 유효하지 않은 파라미터이며, 'publish_tf'가 올바른 파라미터입니다.
             # =======================================================================
-            'publish_tf': 'false',
+            'publish_tf': 'true',
+            # 'publish_robot_description': 'false', # Realsense 노드가 자체 URDF를 발행하지 않도록 설정
 
             # =======================================================================
             # [필수] 코드에서 사용하는 기능들은 'true'로 유지합니다.
@@ -44,9 +45,9 @@ def generate_launch_description():
             # 현재 코드에서 사용하지 않는 포인트 클라우드와 IMU 데이터 발행을 중지하여
             # 시스템 부하를 줄입니다.
             # =======================================================================
-            'pointcloud.enable': 'false', # 포인트 클라우드 비활성화
-            'enable_gyro': 'false',       # IMU (Gyro) 비활성화
-            'enable_accel': 'false',      # IMU (Accel) 비활성화
+            'pointcloud.enable': 'true', # 포인트 클라우드 비활성화
+            'enable_gyro': 'true',       # IMU (Gyro) 비활성화
+            'enable_accel': 'true',      # IMU (Accel) 비활성화
             
             # =======================================================================
             # [유지] 해상도 및 프레임 설정은 기존과 동일하게 유지합니다.
