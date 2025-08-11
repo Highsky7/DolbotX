@@ -45,9 +45,9 @@ def generate_launch_description():
             # 현재 코드에서 사용하지 않는 포인트 클라우드와 IMU 데이터 발행을 중지하여
             # 시스템 부하를 줄입니다.
             # =======================================================================
-            'pointcloud.enable': 'true', # 포인트 클라우드 비활성화
-            'enable_gyro': 'true',       # IMU (Gyro) 비활성화
-            'enable_accel': 'true',      # IMU (Accel) 비활성화
+            'pointcloud.enable': 'false', # 포인트 클라우드 비활성화
+            'enable_gyro': 'false',       # IMU (Gyro) 비활성화
+            'enable_accel': 'false',      # IMU (Accel) 비활성화
             
             # =======================================================================
             # [유지] 해상도 및 프레임 설정은 기존과 동일하게 유지합니다.
