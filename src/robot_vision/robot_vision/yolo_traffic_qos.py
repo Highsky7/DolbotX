@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: yolo_traffic_modified.py
+# FILE: yolo_traffic.py
+# 수정 사항: camera_info 토픽 구독 시 명시적인 QoS 프로파일 제거
 
 import rclpy
 from rclpy.node import Node
@@ -10,26 +11,40 @@ import torch
 from ultralytics import YOLO
 import message_filters
 
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from geometry_msgs.msg import Point
-from cv_bridge import CvBridge
+from cv_bridge import CvBridge, CvBridgeError
+
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node')
-        self.get_logger().info("--- YOLO Vision Node (Image Raw) ---")
+        self.get_logger().info("--- YOLO Vision Node (QoS Applied) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"Using compute device: {self.device}")
-        
-        # 처리할 이미지 크기 파라미터 선언
+
+        # QoS 프로파일 정의
+        # 1. 센서 데이터용 프로파일 (이미지, 깊이 등)
+        self.qos_profile_sensor_data = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        # 2. 분석 결과/명령용 프로파일 (탐지된 거리 등)
+        self.qos_profile_reliable_default = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
         self.declare_parameter('proc_width', 640)
         self.declare_parameter('proc_height', 480)
         self.proc_width = self.get_parameter('proc_width').get_parameter_value().integer_value
         self.proc_height = self.get_parameter('proc_height').get_parameter_value().integer_value
 
         try:
-            # 사용할 모델(보급품, 마커, 신호등)만 로드
             self.declare_parameter('supply_model_path', './tracking.pt')
             self.declare_parameter('marker_model_path', './vision_enemy2.pt')
             self.declare_parameter('traffic_model_path', './traffic_light.pt')
@@ -52,41 +67,42 @@ class YoloVisionNode(Node):
 
         self.scaled_camera_intrinsics = None
         
-        # Publisher 선언 (Image 타입으로 변경)
-        self.distance_pub = self.create_publisher(Point, '/supply_distance', 1)
-        self.realsense_viz_pub = self.create_publisher(Image, '/unified_vision/realsense/viz', 1)
-        self.usb_cam_viz_pub = self.create_publisher(Image, '/unified_vision/usb_cam/viz', 1)
+        # Publisher 선언 (QoS 프로파일 적용)
+        self.distance_pub = self.create_publisher(Point, '/supply_distance', qos_profile=self.qos_profile_reliable_default)
+        self.realsense_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/realsense/viz/compressed', qos_profile=self.qos_profile_sensor_data)
+        self.usb_cam_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam/viz/compressed', qos_profile=self.qos_profile_sensor_data)
 
-        # Subscriber 선언 (Image 타입으로 변경)
-        realsense_img_topic = '/camera/color/image_raw' # raw 이미지 토픽
+        # Subscriber 선언 (QoS 프로파일 적용 및 깊이 압축 구독)
+        realsense_img_topic = '/camera/color/image_raw/compressed'
         depth_topic = "/camera/aligned_depth_to_color/image_raw"
         info_topic = "/camera/color/camera_info"
-        realsense_img_sub = message_filters.Subscriber(self, Image, realsense_img_topic) # CompressedImage -> Image
-        depth_sub = message_filters.Subscriber(self, Image, depth_topic)
+        
+        realsense_img_sub = message_filters.Subscriber(self, CompressedImage, realsense_img_topic, qos_profile=self.qos_profile_sensor_data)
+        depth_sub = message_filters.Subscriber(self, Image, depth_topic, qos_profile=self.qos_profile_sensor_data)
+        
+        # [요청 사항 수정] camera_info 토픽은 QoS 프로파일을 명시하지 않아 경고를 방지합니다.
         info_sub = message_filters.Subscriber(self, CameraInfo, info_topic)
         
         self.ts = message_filters.ApproximateTimeSynchronizer([realsense_img_sub, depth_sub, info_sub], queue_size=5, slop=0.5)
         self.ts.registerCallback(self.realsense_callback)
         
-        usb_cam_topic = '/camera1/image_raw' # raw 이미지 토픽
-        self.usb_cam_sub = self.create_subscription(Image, usb_cam_topic, self.usb_cam_callback, 1) # CompressedImage -> Image
+        usb_cam_topic = 'camera1/image_compressed'
+        self.usb_cam_sub = self.create_subscription(CompressedImage, usb_cam_topic, self.usb_cam_callback, qos_profile=self.qos_profile_sensor_data)
         
         self.get_logger().info("✅ YOLO Vision Node initialized successfully.")
 
-    def realsense_callback(self, image_msg, depth_msg, info_msg):
+    def realsense_callback(self, compressed_image_msg, depth_msg, info_msg):
         try:
-            # CompressedImage 디코딩 로직 제거, CvBridge로 바로 변환
-            cv_color_orig = self.bridge.imgmsg_to_cv2(image_msg, 'bgr8')
-            cv_color = cv2.resize(cv_color_orig, (self.proc_width, self.proc_height))
+            np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
+            cv_color = cv2.resize(cv2.imdecode(np_arr, cv2.IMREAD_COLOR), (self.proc_width, self.proc_height))
             cv_depth = cv2.resize(self.bridge.imgmsg_to_cv2(depth_msg, '16UC1'), (self.proc_width, self.proc_height), interpolation=cv2.INTER_NEAREST)
-            
+
             if self.scaled_camera_intrinsics is None:
                 self.scale_camera_info(info_msg)
             
             self.run_supply_tracking(cv_color, cv_depth)
             
-            # 시각화 이미지 발행
-            self.publish_image_viz(self.realsense_viz_pub, cv_color)
+            self.publish_compressed_viz(self.realsense_viz_pub, cv_color)
             
         except Exception as e:
             self.get_logger().error(f"Error in Realsense callback: {e}", exc_info=True)
@@ -120,10 +136,10 @@ class YoloVisionNode(Node):
                         cv2.rectangle(color_image, (x1, y1), (x2, y2), (0, 255, 255), 2)
                         cv2.putText(color_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
     
-    def usb_cam_callback(self, msg):
+    def usb_cam_callback(self, compressed_msg):
         try:
-            # CompressedImage 디코딩 로직 제거, CvBridge로 바로 변환
-            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            np_arr = np.frombuffer(compressed_msg.data, np.uint8)
+            cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False)
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
@@ -131,16 +147,15 @@ class YoloVisionNode(Node):
             results_traffic = self.traffic_detection_model(cv_image, conf=0.5, iou=0.45, verbose=False)
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
 
-            # 최종 결과 이미지 발행
-            self.publish_image_viz(self.usb_cam_viz_pub, annotated_image)
+            self.publish_compressed_viz(self.usb_cam_viz_pub, annotated_image)
         except Exception as e:
             self.get_logger().error(f"Error in USB Cam callback: {e}")
 
-    # CompressedImage 발행 함수를 Image 발행 함수로 변경
-    def publish_image_viz(self, publisher, cv_image):
-        # cv2_to_imgmsg를 사용하여 OpenCV 이미지를 Image 메시지로 변환
-        msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
+    def publish_compressed_viz(self, publisher, cv_image):
+        msg = CompressedImage()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "jpeg"
+        msg.data = np.array(cv2.imencode('.jpg', cv_image)[1]).tobytes()
         publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):

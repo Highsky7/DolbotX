@@ -86,8 +86,6 @@ class YoloVisionNode(Node):
             # 보급품 추적 알고리즘 실행
             self.run_supply_tracking(cv_color, cv_depth)
             
-            # 주행 가능 영역 탐지 및 마스킹 로직 전체 제거
-            
             # 시각화 이미지 발행
             self.publish_compressed_viz(self.realsense_viz_pub, cv_color)
             

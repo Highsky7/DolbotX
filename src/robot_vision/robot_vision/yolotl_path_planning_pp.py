@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: yolotl_path_planning_pp_drivable_area.py
-# DESCRIPTION: YOLO 모델과 BEV 변환을 이용해 '주행 가능 영역'의 중심 경로를 생성하는 노드입니다.
-# [핵심 수정] 차선이 아닌, 단일 주행 가능 영역을 기반으로 경로를 생성합니다.
+# FILE: yolotl_path_planning_pp.py
+# 수정 사항: Publisher/Subscriber에 명시적인 QoS 프로파일 적용
 
 import rclpy
 from rclpy.node import Node
@@ -15,11 +14,13 @@ from ultralytics import YOLO
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float64, Bool
 from cv_bridge import CvBridge
-import traceback  # [수정] 예외 추적을 위해 traceback 모듈 import
+import traceback
 
-# --- 유틸리티 함수 ---
+# [핵심 수정] QoS 관련 클래스 import
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+
+# --- 유틸리티 함수 (변경 없음) ---
 def polyfit_path(points_y, points_x, order=2):
-    """주어진 y, x 점들에 대해 다항식을 피팅합니다."""
     if len(points_y) < 10: return None
     try: return np.polyfit(points_y, points_x, order)
     except (np.linalg.LinAlgError, TypeError): return None
@@ -57,12 +58,23 @@ def overlay_polyline(image, coeff, color=(0, 255, 0), step=4, thickness=3):
 class YoloBevDrivableAreaNode(Node):
     def __init__(self):
         super().__init__('yolo_bev_drivable_area_node')
-        self.get_logger().info("--- YOLO BEV Drivable Area Planning Node ---")
+        self.get_logger().info("--- YOLO BEV Drivable Area Planning Node (QoS Applied) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"Using compute device: {self.device}")
-
-        # --- 파라미터 선언 ---
+        
+        # [핵심 수정] QoS 프로파일 정의
+        self.qos_profile_sensor_data = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        self.qos_profile_actuator_command = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
         self.declare_parameter('yolo_model_path', './YOLOTL.pt')
         self.declare_parameter('yolo_confidence', 0.5)
         self.declare_parameter('bev_param_file', './bev_params.npz')
@@ -70,7 +82,6 @@ class YoloBevDrivableAreaNode(Node):
         self.declare_parameter('smoothing_alpha', 0.6)
         self.declare_parameter('lookahead_distance', 0.7)
 
-        # --- 파라미터 값 가져오기 ---
         yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
         self.yolo_confidence = self.get_parameter('yolo_confidence').get_parameter_value().double_value
         bev_param_file = self.get_parameter('bev_param_file').get_parameter_value().string_value
@@ -92,12 +103,13 @@ class YoloBevDrivableAreaNode(Node):
 
         self.tracked_center_path_coeff = None
         
-        self.steer_pub = self.create_publisher(Float64, '/steering_angle', 1)
-        self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', 1)
-        self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', 1)
+        # Publisher/Subscriber에 QoS 프로파일 적용
+        self.steer_pub = self.create_publisher(Float64, '/steering_angle', qos_profile=self.qos_profile_actuator_command)
+        self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', qos_profile=self.qos_profile_sensor_data)
+        self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', qos_profile=self.qos_profile_sensor_data)
         
         realsense_img_topic = '/camera/color/image_raw/compressed'
-        self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, 10)
+        self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, qos_profile=self.qos_profile_sensor_data)
         self.get_logger().info(f"✅ Node initialized. Subscribing to {realsense_img_topic}")
 
     def do_bev_transform(self, image):
@@ -136,12 +148,10 @@ class YoloBevDrivableAreaNode(Node):
             self.publish_visualization(bev_image, filtered_mask, viz_data, steering_angle_rad)
 
         except Exception as e:
-            # [수정] rclpy 로거에 맞는 방식으로 예외 상세 정보 출력
             error_msg = f"Error in planning callback: {e}\n{traceback.format_exc()}"
             self.get_logger().error(error_msg)
 
     def calculate_steering_from_area(self, area_mask):
-        # [수정] np.any의 결과를 bool()로 명시적 형 변환
         is_detected = bool(np.any(area_mask))
         self.status_pub.publish(Bool(data=is_detected))
 
