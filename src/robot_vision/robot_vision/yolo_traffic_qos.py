@@ -188,7 +188,7 @@ class YoloVisionNode(Node):
                         
                         label = f"Supply Box: x={point_msg.x:.2f}m, y={point_msg.y:.2f}m, z={point_msg.z:.2f}m"
                         cv2.rectangle(color_image, (orig_x1, orig_y1), (orig_x2, int(y2 * self.intrinsics.height / self.proc_height)), (0, 255, 255), 2)
-                        cv2.putText(color_image, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        cv2.putText(color_image, label, (cx-200, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         
         # [수정] 해당 프레임의 감지 상태를 반환
         return supply_detected_in_frame
@@ -213,26 +213,29 @@ class YoloVisionNode(Node):
         publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):
-        # 이 함수는 예시이며, 실제 구현에 맞게 수정해야 합니다.
         for result in results:
-            for box in result.boxes:
+            for box in result.boxes.cpu().numpy():
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cls_id = int(box.cls)
-                label = self.marker_class_names[cls_id]
-                cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+                conf, cls_id = box.conf[0], int(box.cls[0])
+                label = self.marker_class_names[cls_id] if cls_id < len(self.marker_class_names) else "Unknown"
+                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                box_center_x = (x1 + x2) // 2
+                box_center_y = (y1 + y2) // 2
+                cv2.putText(image, f"{label}: {conf:.2f}", (box_center_x, box_center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
         return image
 
     def draw_traffic_detections(self, image, results):
-        # 이 함수는 예시이며, 실제 구현에 맞게 수정해야 합니다.
         for result in results:
-            for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cls_id = int(box.cls)
-                label = self.traffic_model_class_names[cls_id]
-                color = (0, 0, 255) if label == 'red' else (0, 255, 0)
-                cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+            for box in result.boxes.cpu().numpy():
+                cls_id = int(box.cls[0])
+                if cls_id < len(self.traffic_model_class_names):
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    conf = box.conf[0]
+                    label = self.traffic_model_class_names[cls_id]
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    box_center_x = (x1 + x2) // 2
+                    box_center_y = (y1 + y2) // 2
+                    cv2.putText(image, f"{label}: {conf:.2f}", (box_center_x, box_center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
         return image
 
 

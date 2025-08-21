@@ -63,7 +63,7 @@ class YoloVisionNode(Node):
         
         # Publisher 선언
         self.distance_pub = self.create_publisher(Point, '/supply_distance', 1)
-        self.status_pub = self.create_publisher(Bool, '/supply_status', self.qos_profile_reliable_default)
+        self.status_pub = self.create_publisher(Bool, '/supply_status', 1)
 
         self.realsense_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/realsense/viz/compressed', 1)
         self.usb_cam_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam/viz/compressed', 1)
@@ -130,24 +130,32 @@ class YoloVisionNode(Node):
 
             # 컬러 이미지는 압축 해제 후 그대로 사용 (나중에 추론 및 시각화에 활용)
             np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
-            cv_color_original = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            cv_color = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
             # 깊이 이미지는 원본 해상도(16UC1, mm 단위)로 변환
-            cv_depth_original = self.bridge.imgmsg_to_cv2(depth_msg, '16UC1')
+            cv_depth = self.bridge.imgmsg_to_cv2(depth_msg, '16UC1')
 
             # 보급품 추적 알고리즘 실행
             # 시각화를 위해 라벨이 그려질 원본 컬러 이미지를 함께 전달
-            self.run_supply_tracking(cv_color_original, cv_depth_original)
+            supply_detected = self.run_supply_tracking(cv_color, cv_depth)
+            
+            # [추가] 감지 상태를 /supply_status 토픽으로 발행
+            status_msg = Bool()
+            status_msg.data = supply_detected
+            self.status_pub.publish(status_msg)
             
             # 시각화 이미지는 지정된 크기로 리사이즈하여 발행
-            viz_image = cv2.resize(cv_color_original, (self.proc_width, self.proc_height))
-            self.publish_compressed_viz(self.realsense_viz_pub, viz_image)
+            viz_color = cv2.resize(cv_color, (self.proc_width, self.proc_height))
+            self.publish_compressed_viz(self.realsense_viz_pub, viz_color)
             
         except Exception as e:
             self.get_logger().error(f"Error in Realsense callback: {e}\n{traceback.format_exc()}")
 
     def run_supply_tracking(self, color_image, depth_image):
         if self.intrinsics is None: return
+        
+        # [추가] 프레임 내에서 supply가 감지되었는지 추적하기 위한 플래그
+        supply_detected_in_frame = False
 
         # YOLO 모델에는 리사이즈된 이미지를 입력
         resized_color_image = cv2.resize(color_image, (self.proc_width, self.proc_height))
@@ -192,7 +200,7 @@ class YoloVisionNode(Node):
                         
                         # 시각화를 위해 원본 이미지에 bounding box와 라벨 그리기
                         cv2.rectangle(color_image, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
-                        cv2.putText(color_image, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        cv2.putText(color_image, label, (cx-200, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         # return supply_detection_status boolean
         return supply_detected_in_frame
     
@@ -228,17 +236,23 @@ class YoloVisionNode(Node):
                 conf, cls_id = box.conf[0], int(box.cls[0])
                 label = self.marker_class_names[cls_id] if cls_id < len(self.marker_class_names) else "Unknown"
                 cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                box_center_x = (x1 + x2) // 2
+                box_center_y = (y1 + y2) // 2
+                cv2.putText(image, f"{label}: {conf:.2f}", (box_center_x, box_center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
         return image
 
     def draw_traffic_detections(self, image, results):
         for result in results:
             for box in result.boxes.cpu().numpy():
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf, cls_id = box.conf[0], int(box.cls[0])
-                label = self.traffic_model_class_names[cls_id] if cls_id < len(self.traffic_model_class_names) else "Unknown"
-                cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+                cls_id = int(box.cls[0])
+                if cls_id < len(self.traffic_model_class_names):
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    conf = box.conf[0]
+                    label = self.traffic_model_class_names[cls_id]
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    box_center_x = (x1 + x2) // 2
+                    box_center_y = (y1 + y2) // 2
+                    cv2.putText(image, f"{label}: {conf:.2f}", (box_center_x, box_center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
         return image
 
 def main(args=None):
