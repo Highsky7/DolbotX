@@ -236,3 +236,4 @@ AMENT_IGNORE
 # Pre trained weights
 *.pt
 *.pth
+*.onnx
