@@ -1,1 +1,2 @@
 ultralytics == 8.3.172
+numpy==1.26.4
