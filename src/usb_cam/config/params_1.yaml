@@ -3,7 +3,7 @@
       # video_device: "/dev/abko_apc850"
       video_device: "/dev/logitech_c922"
       # video_device: "/dev/video8"
-      framerate: 30.0
+      framerate: 15.0
       io_method: "mmap"
       frame_id: "camera"
       pixel_format: "mjpeg2rgb"  # see usb_cam/supported_formats for list of supported formats
