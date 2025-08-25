@@ -6,6 +6,7 @@
 # 2. [Hinton's Fix] run_supply_tracking 함수 내의 리사이즈된 깊이 이미지에 대한 좌표 계산 오류 수정.
 # 3. [Hinton's Fix] 안전한 노드 종료 로직 추가.
 # 4. 기존의 정수형 QoS 설정 방식은 그대로 유지.
+# 5. [Hinton's Command Fix] 마커/신호등 감지 결과를 바탕으로 아두이노 제어 및 주행 명령 토픽 발행 기능 추가.
 
 import rclpy
 from rclpy.node import Node
@@ -20,7 +21,7 @@ import threading
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from geometry_msgs.msg import Point
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String # [Hinton's Command Fix] String 메시지 타입 추가
 from cv_bridge import CvBridge
 
 import pyrealsense2 as rs2
@@ -54,17 +55,19 @@ class YoloVisionNode(Node):
             self.traffic_model_class_names = ['red', 'green']
         except Exception as e:
             self.get_logger().error(f"Failed to load YOLO models: {e}")
-            self.destroy_node()
-            return
+            self.destroy_node(); return
 
         self.intrinsics = None
         self.camera_info_sub = None
 
-        # 퍼블리셔 선언 (기존 QoS 방식 유지)
+        # 퍼블리셔 선언
         self.distance_pub = self.create_publisher(Point, '/supply_distance', 10)
         self.status_pub = self.create_publisher(Bool, '/supply_status', 10)
         self.realsense_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/realsense/viz/compressed', 1)
         self.usb_cam_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam/viz/compressed', 1)
+        # [Hinton's Command Fix] 아두이노 제어 및 주행 명령을 위한 퍼블리셔 추가
+        self.led_pub = self.create_publisher(String, '/led_control', 10)
+        self.traffic_pub = self.create_publisher(String, '/traffic_command', 10)
 
         # 메모리 재사용을 위한 버퍼 선언
         self.resized_color_yolo = np.empty((self.proc_height, self.proc_width, 3), dtype=np.uint8)
@@ -78,7 +81,7 @@ class YoloVisionNode(Node):
         self.yolo_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
 
-        # 구독자 생성 (기존 QoS 방식 유지)
+        # 구독자 생성
         info_topic = "/camera/color/camera_info"
         self.camera_info_sub = self.create_subscription(CameraInfo, info_topic, self.camera_info_callback, 10)
         self.get_logger().info(f"Waiting for CameraInfo on topic: {info_topic}")
@@ -113,8 +116,6 @@ class YoloVisionNode(Node):
         realsense_img_topic = '/camera/color/image_raw/compressed'
         depth_topic = "/camera/aligned_depth_to_color/image_raw"
         
-        # message_filters Subscriber는 QoS 프로파일을 직접 받지 않으므로, rclpy 구독을 생성하여 전달할 수 있으나
-        # 여기서는 기본 QoS를 사용하도록 둡니다. (또는 별도 구독을 생성하여 qos_profile 인자를 전달해야 함)
         realsense_img_sub = message_filters.Subscriber(self, CompressedImage, realsense_img_topic)
         depth_sub = message_filters.Subscriber(self, Image, depth_topic)
         
@@ -122,7 +123,6 @@ class YoloVisionNode(Node):
         self.ts.registerCallback(self.realsense_callback)
         self.get_logger().info("✅ YOLO Vision Node initialized successfully.")
 
-    # [힌튼 수정] 콜백은 작업을 제출하고 즉시 리턴하도록 변경
     def realsense_callback(self, compressed_image_msg, depth_msg):
         if self.intrinsics is None or self._is_shutting_down:
             return
@@ -131,7 +131,6 @@ class YoloVisionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to submit realsense task: {e}")
     
-    # [힌튼 수정] 콜백은 작업을 제출하고 즉시 리턴하도록 변경
     def usb_cam_callback(self, compressed_msg):
         if self._is_shutting_down:
             return
@@ -140,7 +139,6 @@ class YoloVisionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to submit usb_cam task: {e}")
             
-    # [힌튼 추가] 실제 연산을 수행하는 워커 함수
     def _process_realsense_data(self, compressed_image_msg, depth_msg):
         try:
             np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
@@ -164,7 +162,6 @@ class YoloVisionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in Realsense worker: {e}\n{traceback.format_exc()}")
             
-    # [힌튼 추가] 실제 연산을 수행하는 워커 함수
     def _process_usb_cam_data(self, compressed_msg):
         try:
             np_arr = np.frombuffer(compressed_msg.data, np.uint8)
@@ -175,8 +172,53 @@ class YoloVisionNode(Node):
                 return
 
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False)
+            
+            # [Hinton's Command Fix] 마커 감지 및 LED 제어 메시지 발행
+            roka_found = False
+            enemy_found = False
+            for result in results_marker:
+                for box in result.boxes.cpu().numpy():
+                    cls_id = int(box.cls[0])
+                    label = self.marker_class_names[cls_id] if cls_id < len(self.marker_class_names) else "Unknown"
+                    if label == 'ROKA':
+                        roka_found = True
+                    elif label == 'Enemy':
+                        enemy_found = True
+            
+            led_msg = String()
+            if roka_found:
+                led_msg.data = "ROKA" # 초록불
+            elif enemy_found:
+                led_msg.data = "ENEMY" # 빨간불
+            else:
+                led_msg.data = "NONE" # LED 끄기
+            self.led_pub.publish(led_msg)
+            
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
+            
             results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False)
+            
+            # [Hinton's Command Fix] 신호등 감지 및 주행 명령 발행 (안전을 위해 red 우선)
+            red_found = False
+            green_found = False
+            for result in results_traffic:
+                for box in result.boxes.cpu().numpy():
+                    cls_id = int(box.cls[0])
+                    if cls_id < len(self.traffic_model_class_names):
+                        label = self.traffic_model_class_names[cls_id]
+                        if label == 'red':
+                            red_found = True
+                        elif label == 'green':
+                            green_found = True
+            
+            traffic_msg = String()
+            if red_found:
+                traffic_msg.data = "stop"
+                self.traffic_pub.publish(traffic_msg)
+            elif green_found:
+                traffic_msg.data = "go"
+                self.traffic_pub.publish(traffic_msg)
+
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
 
             self.publish_compressed_viz(self.usb_cam_viz_pub, annotated_image)
@@ -194,8 +236,6 @@ class YoloVisionNode(Node):
                 supply_detected_in_frame = True
 
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                
-                # [힌튼 수정] 치명적인 버그 수정: 리사이즈된 깊이 이미지에 맞는 좌표 사용
                 cx_res = (x1 + x2) // 2
                 cy_res = (y1 + y2) // 2
 
@@ -203,7 +243,6 @@ class YoloVisionNode(Node):
                     depth_in_mm = resized_depth_image[cy_res, cx_res]
                     
                     if depth_in_mm > 0:
-                        # 3D 변환에는 원본 이미지 좌표가 필요하므로 다시 스케일링
                         orig_cx = int(cx_res * self.intrinsics.width / self.proc_width)
                         orig_cy = int(cy_res * self.intrinsics.height / self.proc_height)
 
@@ -214,7 +253,6 @@ class YoloVisionNode(Node):
                         self.point_msg.z = float(-result[1] / 1000.0)
                         self.distance_pub.publish(self.point_msg)
                         
-                        # 시각화(bbox 그리기)를 위해 원본 이미지 크기로 좌표 복원
                         orig_x1 = int(x1 * self.intrinsics.width / self.proc_width)
                         orig_y1 = int(y1 * self.intrinsics.height / self.proc_height)
                         orig_x2 = int(x2 * self.intrinsics.width / self.proc_width)
@@ -258,7 +296,6 @@ class YoloVisionNode(Node):
                     cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
         return image
 
-    # [힌튼 추가] 안전한 종료를 위한 메서드
     def destroy_node(self):
         self.get_logger().info("Shutting down the thread pool.")
         self._is_shutting_down = True
