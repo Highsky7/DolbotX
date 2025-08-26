@@ -1,8 +1,6 @@
 /**:
     ros__parameters:
-      video_device: "/dev/abko_apc850"
-      # video_device: "/dev/logitech_c922"
-      # video_device: "/dev/video8"
+      video_device: "/dev/logitech_c922"
       framerate: 15.0
       io_method: "mmap"
       frame_id: "camera"
