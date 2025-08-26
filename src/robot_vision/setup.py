@@ -24,7 +24,9 @@ setup(
         'console_scripts': [
             'onnx_path_planner_pp = robot_vision.onnx_path_planning_pp:main',
             'onnx_traffic = robot_vision.onnx_traffic:main',
+            'onnx_multi_traffic = robot_vision.onnx_multi_traffic:main',
             'onnx_traffic_qos = robot_vision.onnx_traffic_qos:main',
+            'onnx_multi_traffic_qos = robot_vision.onnx_multi_traffic_qos:main',
             'yolotl_path_planner_pp = robot_vision.yolotl_path_planning_pp:main',
             'yolo_traffic_optimized = robot_vision.yolo_traffic_optimized:main',
             'yolo_traffic_qos_optimized = robot_vision.yolo_traffic_qos_optimized:main',
