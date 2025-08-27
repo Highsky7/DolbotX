@@ -7,8 +7,10 @@
 # 2. [Hinton's Service Fix] /supply_distance 토픽 발행 로직을 PickPlace 서비스 클라이언트로 대체.
 # 3. [Hinton's Reliability Fix] 연속성 및 거리 필터를 추가하여 오인식된 객체에 대한 서비스 요청 방지.
 # 4. [Hinton's Dual Vision Fix] USB 카메라 입력 소스를 camera1과 camera2로 확장하여 인식 범위 및 신뢰성 향상.
-# 5. [Guido's Real-time Fix] CameraInfo QoS를 TRANSIENT_LOCAL로 수정하여 통신 안정성 확보.
+# 5. [Guido's Real-time Fix] CameraInfo QoS를 VOLATILE로 수정하여 통신 안정성 확보.
 # 6. [Guido's Latency Fix] 처리 지연을 막기 위해 잠금(Lock) 기반의 프레임 드롭(Frame Drop) 전략 적용.
+# 7. [User's Refinement] 신호등 탐지 로직에 파라미터 기반의 크기, 위치, 시간적 일관성 필터 적용.
+# 8. [Guido's Final Touch] FP16 추론 가속 적용 및 코드 간소화.
 
 import rclpy
 from rclpy.node import Node
@@ -38,24 +40,43 @@ class YoloVisionNode(Node):
         super().__init__('yolo_vision_node_guido_optimized')
         self.get_logger().info("--- YOLO Vision Node (Guido's Optimized Real-time Architecture) ---")
         
-        # [Guido's Latency Fix] 각 카메라 스트림 처리를 위한 잠금 객체 생성
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
 
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use the best available provider.")
+        
+        # GPU 사용 시 반정밀도(FP16) 추론 활성화
+        self.use_half = self.device == 'cuda'
+        # self.use_half = False # 반정밀도 비활성화
+        if self.use_half:
+            self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
-        # QoS Profiles
         self.qos_sensor_data = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
         self.qos_reliable_default = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=10)
-        # [Guido's Real-time Fix] CameraInfo는 Latching되어야 하므로 TRANSIENT_LOCAL로 설정
         self.qos_camera_info = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=1, durability=QoSDurabilityPolicy.VOLATILE)
         
-        # Parameters
+        # --- [사용자 요청] 신호등 탐지 파라미터 추가 ---
+        self.declare_parameter('red_light_min_area', 100)
+        self.declare_parameter('traffic_roi_top_ratio', 0.6)
+        self.declare_parameter('red_light_confirmation_frames', 3)
+        self.declare_parameter('red_light_tracking_tolerance', 50) # 픽셀 단위
+
+        self.RED_LIGHT_MIN_AREA = self.get_parameter('red_light_min_area').get_parameter_value().integer_value
+        self.TRAFFIC_ROI_TOP_RATIO = self.get_parameter('traffic_roi_top_ratio').get_parameter_value().double_value
+        self.RED_LIGHT_CONFIRMATION_FRAMES = self.get_parameter('red_light_confirmation_frames').get_parameter_value().integer_value
+        self.RED_LIGHT_TRACKING_TOLERANCE = self.get_parameter('red_light_tracking_tolerance').get_parameter_value().integer_value
+
+        self.red_light_tracker = {
+            'cam1': {'counter': 0, 'last_center': None},
+            'cam2': {'counter': 0, 'last_center': None}
+        }
+        # --- 파라미터 추가 끝 ---
+
         self.declare_parameter('proc_width', 640)
         self.declare_parameter('proc_height', 480)
         self.proc_width = self.get_parameter('proc_width').get_parameter_value().integer_value
@@ -107,7 +128,7 @@ class YoloVisionNode(Node):
 
         self.resized_color_yolo = np.empty((self.proc_height, self.proc_width, 3), dtype=np.uint8)
         self.resized_depth = np.empty((self.proc_height, self.proc_width), dtype=np.uint16)
-        self.status_msg = Bool()
+        
         self.yolo_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
 
@@ -147,26 +168,24 @@ class YoloVisionNode(Node):
 
     def realsense_callback(self, compressed_image_msg, depth_msg):
         if self.intrinsics is None or self._is_shutting_down: return
-        # [Guido's Latency Fix] 이전 프레임이 처리 중이면 현재 프레임은 버리고(drop) 빠르게 리턴
         if self.realsense_lock.acquire(blocking=False):
             try:
                 self.yolo_executor.submit(self._process_realsense_data, compressed_image_msg, depth_msg)
             except Exception as e:
                 self.get_logger().error(f"Failed to submit realsense task: {e}")
-                self.realsense_lock.release() # 작업 제출 실패 시 즉시 락 해제
+                self.realsense_lock.release()
         else:
             self.get_logger().warn("Dropping a Realsense frame, previous frame still processing.", throttle_duration_sec=1)
 
     def usb_cam_callback(self, compressed_msg, camera_id):
         if self._is_shutting_down: return
         lock = self.usb_cam_locks[camera_id]
-        # [Guido's Latency Fix] 이전 프레임이 처리 중이면 현재 프레임은 버리고(drop) 빠르게 리턴
         if lock.acquire(blocking=False):
             try:
                 self.yolo_executor.submit(self._process_usb_cam_data, compressed_msg, camera_id)
             except Exception as e:
                 self.get_logger().error(f"Failed to submit usb_cam task for {camera_id}: {e}")
-                lock.release() # 작업 제출 실패 시 즉시 락 해제
+                lock.release()
         else:
             self.get_logger().warn(f"Dropping a frame from {camera_id}, previous frame still processing.", throttle_duration_sec=1)
 
@@ -182,13 +201,12 @@ class YoloVisionNode(Node):
             
             color_image_to_draw = cv_color.copy()
             supply_detected = self.run_supply_tracking(color_image_to_draw, self.resized_depth, self.resized_color_yolo)
-            self.status_msg.data = supply_detected
-            self.status_pub.publish(self.status_msg)
+            
+            self.status_pub.publish(Bool(data=supply_detected))
             self.publish_compressed_viz(self.realsense_viz_pub, color_image_to_draw)
         except Exception as e:
             self.get_logger().error(f"Error in Realsense worker: {e}\n{traceback.format_exc()}")
         finally:
-            # [Guido's Latency Fix] 작업 완료 후 반드시 락을 해제하여 다음 프레임을 받을 준비
             self.realsense_lock.release()
             
     def _process_usb_cam_data(self, compressed_msg, camera_id):
@@ -198,7 +216,10 @@ class YoloVisionNode(Node):
             cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if cv_image is None: return
             
-            results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False)
+            h, w, _ = cv_image.shape
+            tracker = self.red_light_tracker[camera_id]
+
+            results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
             roka_found, enemy_found = False, False
             for r in results_marker:
                 for box in r.boxes.cpu().numpy():
@@ -206,24 +227,57 @@ class YoloVisionNode(Node):
                     if label == 'ROKA': roka_found = True
                     elif label == 'Enemy': enemy_found = True
             
-            led_msg = String(); led_msg.data = "ROKA" if roka_found else "ENEMY" if enemy_found else "NONE"
-            self.led_pub.publish(led_msg)
+            led_data = "ROKA" if roka_found else "ENEMY" if enemy_found else "NONE"
+            self.led_pub.publish(String(data=led_data))
             
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
             
-            results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False)
+            results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
             red_found, green_found = False, False
-            for r in results_traffic:
-                for box in r.boxes.cpu().numpy():
-                    label = self.traffic_model_class_names[int(box.cls[0])]
-                    if label == 'red': red_found = True
-                    elif label == 'green': green_found = True
             
-            traffic_msg = String()
+            best_red_candidate_center = None
+
+            for r in results_traffic:
+                for box_data in r.boxes.cpu().numpy():
+                    label = self.traffic_model_class_names[int(box_data.cls[0])]
+                    
+                    if label == 'green':
+                        green_found = True
+                        continue
+
+                    if label == 'red':
+                        if box_data.conf[0] < 0.7: continue
+
+                        box = box_data.xyxy[0].astype(int)
+                        box_w = box[2] - box[0]; box_h = box[3] - box[1]
+
+                        if (box_w * box_h) < self.RED_LIGHT_MIN_AREA: continue
+                        
+                        cy = (box[1] + box[3]) / 2
+                        if cy > h * self.TRAFFIC_ROI_TOP_RATIO: continue
+                        
+                        current_center = np.array([(box[0] + box[2]) / 2, cy])
+                        if best_red_candidate_center is None:
+                             best_red_candidate_center = current_center
+            
+            if best_red_candidate_center is not None:
+                if tracker['last_center'] is not None and \
+                   np.linalg.norm(best_red_candidate_center - tracker['last_center']) < self.RED_LIGHT_TRACKING_TOLERANCE:
+                    tracker['counter'] += 1
+                else:
+                    tracker['counter'] = 1
+                tracker['last_center'] = best_red_candidate_center
+            else:
+                tracker['counter'] = 0
+                tracker['last_center'] = None
+
+            if tracker['counter'] >= self.RED_LIGHT_CONFIRMATION_FRAMES:
+                red_found = True
+            
             if red_found: 
-                traffic_msg.data = "stop"; self.traffic_pub.publish(traffic_msg)
+                self.traffic_pub.publish(String(data="stop"))
             elif green_found: 
-                traffic_msg.data = "go"; self.traffic_pub.publish(traffic_msg)
+                self.traffic_pub.publish(String(data="go"))
             
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
             
@@ -233,7 +287,6 @@ class YoloVisionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in USB Cam worker ({camera_id}): {e}\n{traceback.format_exc()}")
         finally:
-            # [Guido's Latency Fix] 작업 완료 후 반드시 락을 해제하여 다음 프레임을 받을 준비
             lock.release()
 
     def pick_place_response_callback(self, future):
@@ -249,7 +302,7 @@ class YoloVisionNode(Node):
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image):
         if self.intrinsics is None: return False
         
-        results = self.supply_model(yolo_input_image, verbose=False)
+        results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
         supply_found_this_frame = False
         current_position = None
         
@@ -271,10 +324,9 @@ class YoloVisionNode(Node):
                         current_position = np.array([x_coord, y_coord, z_coord])
                         
                         label = f"Supply: x={x_coord:.2f}m, y={y_coord:.2f}m, z={z_coord:.2f}m"
-                        orig_x1 = int(x1 * self.intrinsics.width / self.proc_width)
-                        orig_y1 = int(y1 * self.intrinsics.height / self.proc_height)
-                        orig_x2 = int(x2 * self.intrinsics.width / self.proc_width)
-                        orig_y2 = int(y2 * self.intrinsics.height / self.proc_height)
+                        orig_x1, orig_y1, orig_x2, orig_y2 = [int(v * self.intrinsics.width / self.proc_width) for v in (x1, x2)] + \
+                                                             [int(v * self.intrinsics.height / self.proc_height) for v in (y1, y2)]
+                        
                         cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
                         cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
                         break
@@ -289,16 +341,17 @@ class YoloVisionNode(Node):
 
             if self.detection_counter >= self.DETECTION_THRESHOLD:
                 distance = np.linalg.norm(current_position)
-                if self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE:
-                    if not self.service_call_in_progress:
-                        self.service_call_in_progress = True
-                        request = PickPlace.Request()
-                        request.x, request.y, request.z = current_position[0], current_position[1], current_position[2]
-                        self.get_logger().info(f"Requesting PickPlace service for stable target at {distance:.2f}m.")
-                        future = self.pick_place_client.call_async(request)
-                        future.add_done_callback(self.pick_place_response_callback)
-                else: self.get_logger().debug(f"Stable target detected, but out of range ({distance:.2f}m).")
-            else: self.get_logger().debug(f"Tracking target... continuity: {self.detection_counter}/{self.DETECTION_THRESHOLD}")
+                if self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE and not self.service_call_in_progress:
+                    self.service_call_in_progress = True
+                    request = PickPlace.Request()
+                    request.x, request.y, request.z = current_position.tolist()
+                    self.get_logger().info(f"Requesting PickPlace service for stable target at {distance:.2f}m.")
+                    future = self.pick_place_client.call_async(request)
+                    future.add_done_callback(self.pick_place_response_callback)
+                elif not (self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE):
+                    self.get_logger().debug(f"Stable target detected, but out of range ({distance:.2f}m).")
+            else:
+                self.get_logger().debug(f"Tracking target... continuity: {self.detection_counter}/{self.DETECTION_THRESHOLD}")
         else:
             self.detection_counter = 0
             self.last_detected_position = None
@@ -310,7 +363,9 @@ class YoloVisionNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.format = "jpeg"
         success, encoded_image = cv2.imencode('.jpg', cv_image)
-        if success: msg.data = encoded_image.tobytes(); publisher.publish(msg)
+        if success:
+            msg.data = encoded_image.tobytes()
+            publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):
         for r in results:
