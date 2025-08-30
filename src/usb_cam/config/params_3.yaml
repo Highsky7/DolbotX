@@ -3,12 +3,12 @@
       video_device: "/dev/logitech_c922"
       framerate: 15.0
       io_method: "mmap"
-      frame_id: "camera"
+      frame_id: "camera3"
       pixel_format: "mjpeg2rgb"  # see usb_cam/supported_formats for list of supported formats
       av_device_format: "YUV422P"
       image_width: 640
       image_height: 480
-      camera_name: "test_camera"
+      camera_name: "test_camera3"
       camera_info_url: "package://usb_cam/config/camera_info.yaml"
       brightness: -1
       contrast: -1
