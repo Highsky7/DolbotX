@@ -87,8 +87,8 @@ class YoloVisionNode(Node):
 
         try:
             self.declare_parameter('supply_model_path', './tracking.onnx')
-            self.declare_parameter('marker_model_path', './vision_enemy2.onnx')
-            self.declare_parameter('traffic_model_path', './traffic_light2.onnx')
+            self.declare_parameter('marker_model_path', './vision_enemy3.onnx')
+            self.declare_parameter('traffic_model_path', './traffic_light.onnx')
             supply_model_path = self.get_parameter('supply_model_path').get_parameter_value().string_value
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
             traffic_model_path = self.get_parameter('traffic_model_path').get_parameter_value().string_value
@@ -291,30 +291,52 @@ class YoloVisionNode(Node):
 
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image):
         if self.intrinsics is None: return False
+        
         results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
-        supply_found_this_frame = False; current_position = None
+        supply_found_this_frame = False
+        current_position = None
+        
         for box in results[0].boxes:
             if int(box.cls) == 0:
-                x1, y1, x2, y2 = map(int, box.xyxy[0]); cx_res, cy_res = (x1 + x2) // 2, (y1 + y2) // 2
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cx_res, cy_res = (x1 + x2) // 2, (y1 + y2) // 2
                 if 0 <= cy_res < self.proc_height and 0 <= cx_res < self.proc_width:
                     depth_in_mm = resized_depth_image[cy_res, cx_res]
                     if depth_in_mm > 0:
                         supply_found_this_frame = True
-                        orig_cx, orig_cy = int(cx_res * self.intrinsics.width / self.proc_width), int(cy_res * self.intrinsics.height / self.proc_height)
+                        orig_cx = int(cx_res * self.intrinsics.width / self.proc_width)
+                        orig_cy = int(cy_res * self.intrinsics.height / self.proc_height)
                         deprojected = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [orig_cx, orig_cy], depth_in_mm)
-                        x, y, z = float(deprojected[2]/1000.0), float(-deprojected[0]/1000.0), float(-deprojected[1]/1000.0)
-                        current_position = np.array([x, y, z])
-                        label = f"Supply: x={x:.2f}m, y={y:.2f}m, z={z:.2f}m"
-                        orig_x1, orig_y1, orig_x2, orig_y2 = [int(v * self.intrinsics.width / self.proc_width) for v in (x1, x2)] + \
-                                                             [int(v * self.intrinsics.height / self.proc_height) for v in (y1, y2)]
+                        
+                        x_coord = float(deprojected[2] / 1000.0)
+                        y_coord = float(-deprojected[0] / 1000.0)
+                        z_coord = float(-deprojected[1] / 1000.0)
+                        current_position = np.array([x_coord, y_coord, z_coord])
+                        
+                        label = f"Supply: x={x_coord:.2f}m, y={y_coord:.2f}m, z={z_coord:.2f}m"
+
+                        # --- 💡 수정된 부분 시작 💡 ---
+                        # 원본 해상도에 맞게 좌표를 정확하게 스케일링합니다.
+                        scale_w = self.intrinsics.width / self.proc_width
+                        scale_h = self.intrinsics.height / self.proc_height
+                        orig_x1 = int(x1 * scale_w)
+                        orig_y1 = int(y1 * scale_h)
+                        orig_x2 = int(x2 * scale_w)
+                        orig_y2 = int(y2 * scale_h)
+                        # --- 💡 수정된 부분 끝 💡 ---
+                        
                         cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
                         cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
                         break
+
         if supply_found_this_frame:
-            if self.last_detected_position is not None and np.linalg.norm(current_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
+            if self.last_detected_position is not None and \
+            np.linalg.norm(current_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
                 self.detection_counter += 1
-            else: self.detection_counter = 1
+            else:
+                self.detection_counter = 1
             self.last_detected_position = current_position
+
             if self.detection_counter >= self.DETECTION_THRESHOLD:
                 distance = np.linalg.norm(current_position)
                 if self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE and not self.service_call_in_progress:
@@ -325,13 +347,14 @@ class YoloVisionNode(Node):
                     future = self.pick_place_client.call_async(request)
                     future.add_done_callback(self.pick_place_response_callback)
                 elif not (self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE):
-                     self.get_logger().debug(f"Stable target detected, but out of range ({distance:.2f}m).")
+                    self.get_logger().debug(f"Stable target detected, but out of range ({distance:.2f}m).")
             else:
                 self.get_logger().debug(f"Tracking target... continuity: {self.detection_counter}/{self.DETECTION_THRESHOLD}")
         else:
-            self.detection_counter = 0; self.last_detected_position = None
+            self.detection_counter = 0
+            self.last_detected_position = None
+            
         return supply_found_this_frame
-
     def publish_compressed_viz(self, publisher, cv_image):
         msg = CompressedImage()
         msg.header.stamp = self.get_clock().now().to_msg()

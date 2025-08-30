@@ -97,7 +97,7 @@ class YoloVisionNode(Node):
 
         try:
             self.declare_parameter('supply_model_path', './tracking.onnx')
-            self.declare_parameter('marker_model_path', './vision_enemy2.onnx')
+            self.declare_parameter('marker_model_path', './vision_enemy3.onnx')
             self.declare_parameter('traffic_model_path', './traffic_light.onnx')
             supply_model_path = self.get_parameter('supply_model_path').get_parameter_value().string_value
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
@@ -324,8 +324,16 @@ class YoloVisionNode(Node):
                         current_position = np.array([x_coord, y_coord, z_coord])
                         
                         label = f"Supply: x={x_coord:.2f}m, y={y_coord:.2f}m, z={z_coord:.2f}m"
-                        orig_x1, orig_y1, orig_x2, orig_y2 = [int(v * self.intrinsics.width / self.proc_width) for v in (x1, x2)] + \
-                                                             [int(v * self.intrinsics.height / self.proc_height) for v in (y1, y2)]
+
+                        # --- 💡 수정된 부분 시작 💡 ---
+                        # 원본 해상도에 맞게 좌표를 정확하게 스케일링합니다.
+                        scale_w = self.intrinsics.width / self.proc_width
+                        scale_h = self.intrinsics.height / self.proc_height
+                        orig_x1 = int(x1 * scale_w)
+                        orig_y1 = int(y1 * scale_h)
+                        orig_x2 = int(x2 * scale_w)
+                        orig_y2 = int(y2 * scale_h)
+                        # --- 💡 수정된 부분 끝 💡 ---
                         
                         cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
                         cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
@@ -333,7 +341,7 @@ class YoloVisionNode(Node):
 
         if supply_found_this_frame:
             if self.last_detected_position is not None and \
-               np.linalg.norm(current_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
+            np.linalg.norm(current_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
                 self.detection_counter += 1
             else:
                 self.detection_counter = 1
