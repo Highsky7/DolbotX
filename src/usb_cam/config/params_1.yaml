@@ -2,10 +2,10 @@
     ros__parameters:
       video_device: "/dev/abko_apc850"
       # video_device: "/dev/logitech_c922"
-      # video_device: "/dev/video8"
+      # video_device: "/dev/video0"
       framerate: 15.0
       io_method: "mmap"
-      frame_id: "camera"
+      frame_id: "camera1"
       pixel_format: "mjpeg2rgb"  # see usb_cam/supported_formats for list of supported formats
       av_device_format: "YUV422P"
       image_width: 640
