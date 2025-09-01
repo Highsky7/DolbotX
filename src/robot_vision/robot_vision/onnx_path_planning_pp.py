@@ -80,7 +80,7 @@ class YoloBevDrivableAreaNode(Node):
         self.declare_parameter('yolo_model_path', './YOLOTL.onnx')
         self.declare_parameter('yolo_confidence', 0.5)
         self.declare_parameter('bev_param_file', './bev_params.npz')
-        self.declare_parameter('wheelbase', 0.58)
+        self.declare_parameter('wheelbase', 0.5161)
         self.declare_parameter('smoothing_alpha', 0.6)
         self.declare_parameter('lookahead_distance', 0.7)
 
