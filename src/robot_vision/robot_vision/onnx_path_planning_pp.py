@@ -69,11 +69,11 @@ class YoloBevDrivableAreaNode(Node):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use the best available provider (e.g., CUDA, CPU).")
         
-        # QoS 프로파일 정의
-        self.qos_profile_sensor_data = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
-        self.qos_profile_actuator_command = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=10)
+        # # QoS 프로파일 정의(주석처리)
+        # self.qos_profile_sensor_data = QoSProfile(
+        #     reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+        # self.qos_profile_actuator_command = QoSProfile(
+        #     reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=10)
         
         # 파라미터 선언
         # [Hinton's ONNX Fix] .pt 파일 대신 .onnx 파일을 기본값으로 설정
@@ -109,11 +109,13 @@ class YoloBevDrivableAreaNode(Node):
         self.planning_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='planning_worker')
         self._is_shutting_down = False
         
-        # 퍼블리셔/섭스크라이버
-        self.steer_pub = self.create_publisher(Float64, '/steering_angle', qos_profile=self.qos_profile_actuator_command)
-        self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', qos_profile=self.qos_profile_sensor_data)
-        self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', qos_profile=self.qos_profile_sensor_data)
-        
+        # 퍼블리셔/섭스크라이버(qos 프로파일 주석처리)
+        # self.steer_pub = self.create_publisher(Float64, '/steering_angle', qos_profile=self.qos_profile_actuator_command)
+        self.steer_pub = self.create_publisher(Float64, '/steering_angle', 10)
+        # self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', qos_profile=self.qos_profile_sensor_data)
+        self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', 10)
+        # self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', qos_profile=self.qos_profile_sensor_data)
+        self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', 10)
         realsense_img_topic = '/camera/color/image_raw/compressed'
         self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, qos_profile=self.qos_profile_sensor_data)
         self.get_logger().info(f"✅ Node initialized. Subscribing to {realsense_img_topic}")
