@@ -54,7 +54,7 @@ class YoloVisionNode(Node):
             self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
         self.qos_sensor_data = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+            reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
         self.qos_reliable_default = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=10)
         self.qos_camera_info = QoSProfile(
