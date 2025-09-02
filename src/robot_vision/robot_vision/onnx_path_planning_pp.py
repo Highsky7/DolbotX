@@ -117,7 +117,8 @@ class YoloBevDrivableAreaNode(Node):
         # self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', qos_profile=self.qos_profile_sensor_data)
         self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', 10)
         realsense_img_topic = '/camera/color/image_raw/compressed'
-        self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, qos_profile=self.qos_profile_sensor_data)
+        # self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, qos_profile=self.qos_profile_sensor_data)
+        self.img_sub = self.create_subscription(CompressedImage, realsense_img_topic, self.planning_callback, 10)
         self.get_logger().info(f"✅ Node initialized. Subscribing to {realsense_img_topic}")
 
     # [힌튼 수정] 콜백은 작업을 제출하고 즉시 리턴
