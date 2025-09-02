@@ -1,11 +1,11 @@
 steering_to_diff:
   ros__parameters:
-    wheelbase: 0.40
-    track_width: 0.36
-    v_nominal: 0.4
-    max_speed: 1.2
+    wheelbase: 0.60
+    track_width: 0.516
+    v_nominal: 1.50
+    max_speed: 2.00
     kappa_gain: 1.0
-    max_steering_angle: 0.6
+    max_steering_angle: 0.60
     use_speed_topic: false
     control_hz: 50.0
 
@@ -13,3 +13,12 @@ steering_to_diff:
     left_topic: /cmd_vel_left
     right_topic: /cmd_vel_right
     speed_topic: /target_speed
+
+    qos_history_depth: 10
+    qos_reliability: "RELIABLE"
+    v_deadzone: 0.001
+    ang_deadzone: 0.0001
+    enable_filters: false
+    angle_alpha: 0.2
+    speed_alpha: 0.2
+

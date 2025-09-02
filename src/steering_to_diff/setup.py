@@ -5,7 +5,7 @@ package_name = 'steering_to_diff'
 setup(
     name=package_name,
     version='0.1.0',
-    packages=find_packages(),  # steering_to_diff 패키지 자동 탐지
+    packages=find_packages(),
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
@@ -25,3 +25,4 @@ setup(
         ],
     },
 )
+
