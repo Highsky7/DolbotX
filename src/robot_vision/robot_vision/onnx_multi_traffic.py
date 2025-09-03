@@ -3,13 +3,8 @@
 # FILE: onnx_multi_traffic_no_qos_optimized.py
 # AUTHOR: Guido (Optimized for Real-time Distributed Systems)
 # DESCRIPTION:
-# 1. [Hinton's ONNX Fix] PyTorch(.pt) 가중치를 ONNX(.onnx)로 변경하여 추론 가속.
-# 2. [Hinton's Service Fix] /supply_distance 토픽 발행 로직을 PickPlace 서비스 클라이언트로 대체.
-# 3. [Hinton's Reliability Fix] 연속성 및 거리 필터를 추가하여 오인식된 객체에 대한 서비스 요청 방지.
-# 4. [Hinton's Dual Vision Fix] USB 카메라 입력 소스를 camera1과 camera2로 확장하여 인식 범위 및 신뢰성 향상.
-# 5. [Guido's Latency Fix] 처리 지연을 막기 위해 잠금(Lock) 기반의 프레임 드롭(Frame Drop) 전략 적용 (QoS 설정 제외).
-# 6. [User's Refinement] 신호등 탐지 로직에 파라미터 기반의 크기, 위치, 시간적 일관성 필터 적용.
-# 7. [Guido's Final Touch] FP16 추론 가속 적용 및 코드 간소화.
+# ... (설명 생략) ...
+# 9. [Hinton's Refinement] ROS 표준 좌표계 수동 변환 로직 제거, TF 시스템으로 변환 일원화.
 
 import rclpy
 from rclpy.node import Node
@@ -28,6 +23,10 @@ from cv_bridge import CvBridge
 
 from mtc_interfaces.srv import PickPlace
 
+import tf2_ros
+from geometry_msgs.msg import PointStamped
+from tf2_geometry_msgs import do_transform_point
+
 import pyrealsense2 as rs2
 if (not hasattr(rs2, 'intrinsics')):
     import pyrealsense2.pyrealsense2 as rs2
@@ -35,7 +34,7 @@ if (not hasattr(rs2, 'intrinsics')):
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node_no_qos_optimized')
-        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, No QoS Version) ---")
+        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Pure TF Version) ---")
         
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
@@ -44,18 +43,14 @@ class YoloVisionNode(Node):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use best provider.")
 
-        # GPU 사용 시 반정밀도(FP16) 추론 활성화
         self.use_half = self.device == 'cuda'        
-        # self.use_half = False # 반정밀도 비활성화
         if self.use_half:
             self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
-        # --- [사용자 요청] 신호등 탐지 파라미터 추가 ---
         self.declare_parameter('red_light_min_area', 100)
         self.declare_parameter('traffic_roi_top_ratio', 0.6)
         self.declare_parameter('red_light_confirmation_frames', 3)
-        self.declare_parameter('red_light_tracking_tolerance', 50) # 픽셀 단위
-
+        self.declare_parameter('red_light_tracking_tolerance', 50) 
         self.RED_LIGHT_MIN_AREA = self.get_parameter('red_light_min_area').get_parameter_value().integer_value
         self.TRAFFIC_ROI_TOP_RATIO = self.get_parameter('traffic_roi_top_ratio').get_parameter_value().double_value
         self.RED_LIGHT_CONFIRMATION_FRAMES = self.get_parameter('red_light_confirmation_frames').get_parameter_value().integer_value
@@ -65,7 +60,6 @@ class YoloVisionNode(Node):
             'cam1': {'counter': 0, 'last_center': None},
             'cam2': {'counter': 0, 'last_center': None}
         }
-        # --- 파라미터 추가 끝 ---
 
         self.declare_parameter('proc_width', 640)
         self.declare_parameter('proc_height', 480)
@@ -104,6 +98,9 @@ class YoloVisionNode(Node):
 
         self.intrinsics = None
         self.camera_info_sub = None
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.pick_place_client = self.create_client(PickPlace, 'pick_place')
         while not self.pick_place_client.wait_for_service(timeout_sec=1.0):
@@ -192,7 +189,7 @@ class YoloVisionNode(Node):
             cv2.resize(cv_color, (self.proc_width, self.proc_height), dst=self.resized_color_yolo, interpolation=cv2.INTER_AREA)
             
             color_image_to_draw = cv_color.copy()
-            supply_detected = self.run_supply_tracking(color_image_to_draw, self.resized_depth, self.resized_color_yolo)
+            supply_detected = self.run_supply_tracking(color_image_to_draw, self.resized_depth, self.resized_color_yolo, compressed_image_msg.header)
             self.status_pub.publish(Bool(data=supply_detected))
             self.publish_compressed_viz(self.realsense_viz_pub, color_image_to_draw)
         except Exception as e:
@@ -288,13 +285,12 @@ class YoloVisionNode(Node):
         except Exception as e: self.get_logger().error(f"Service call failed with exception: {e}")
         finally:
             self.service_call_in_progress = False
-
-    def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image):
+    
+    def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image, header):
         if self.intrinsics is None: return False
         
         results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
         supply_found_this_frame = False
-        current_position = None
         
         for box in results[0].boxes:
             if int(box.cls) == 0:
@@ -308,42 +304,71 @@ class YoloVisionNode(Node):
                         orig_cy = int(cy_res * self.intrinsics.height / self.proc_height)
                         deprojected = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [orig_cx, orig_cy], depth_in_mm)
                         
-                        x_coord = float(deprojected[2] / 1000.0)
-                        y_coord = float(-deprojected[0] / 1000.0)
-                        z_coord = float(-deprojected[1] / 1000.0)
-                        current_position = np.array([x_coord, y_coord, z_coord])
+                        # --- 💡 수정된 부분 시작 (수동 축 변환 제거) 💡 ---
+                        # deprojected 결과는 [X:오른쪽, Y:아래, Z:앞] 방향의 mm 단위 값입니다.
+                        # 이 값을 미터 단위로만 변환하여 TF에 바로 사용합니다.
+                        optical_frame_coords = np.array([
+                            deprojected[0] / 1000.0,
+                            deprojected[1] / 1000.0,
+                            deprojected[2] / 1000.0
+                        ])
                         
-                        label = f"Supply: x={x_coord:.2f}m, y={y_coord:.2f}m, z={z_coord:.2f}m"
+                        # 1. 변환할 Point를 PointStamped 메시지 형태로 생성
+                        point_in_optical_frame = PointStamped()
+                        point_in_optical_frame.header.frame_id = "camera_color_optical_frame"
+                        point_in_optical_frame.header.stamp = header.stamp
+                        # 수동 변환 없는 좌표를 직접 입력
+                        point_in_optical_frame.point.x = optical_frame_coords[0]
+                        point_in_optical_frame.point.y = optical_frame_coords[1]
+                        point_in_optical_frame.point.z = optical_frame_coords[2]
+                        
+                        # --- 💡 수정된 부분 끝 💡 ---
 
-                        # --- 💡 수정된 부분 시작 💡 ---
-                        # 원본 해상도에 맞게 좌표를 정확하게 스케일링합니다.
+                        target_frame = "camera_bottom_screw_frame"
+                        transformed_position = None
+
+                        try:
+                            transform = self.tf_buffer.lookup_transform(
+                                target_frame,
+                                point_in_optical_frame.header.frame_id,
+                                rclpy.time.Time()
+                            )
+                            point_in_target_frame = do_transform_point(point_in_optical_frame, transform)
+                            transformed_position = np.array([
+                                point_in_target_frame.point.x,
+                                point_in_target_frame.point.y,
+                                point_in_target_frame.point.z
+                            ])
+                        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+                            self.get_logger().warn(f"좌표 변환 실패: {e}", throttle_duration_sec=5.0)
+                            return False
+
+                        label = f"Supply({target_frame}): x={transformed_position[0]:.2f}m, y={transformed_position[1]:.2f}m, z={transformed_position[2]:.2f}m"
+
                         scale_w = self.intrinsics.width / self.proc_width
                         scale_h = self.intrinsics.height / self.proc_height
-                        orig_x1 = int(x1 * scale_w)
-                        orig_y1 = int(y1 * scale_h)
-                        orig_x2 = int(x2 * scale_w)
-                        orig_y2 = int(y2 * scale_h)
-                        # --- 💡 수정된 부분 끝 💡 ---
+                        orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
+                        orig_x2, orig_y2 = int(x2 * scale_w), int(y2 * scale_h)
                         
                         cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
-                        cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                        cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                         break
 
-        if supply_found_this_frame:
+        if supply_found_this_frame and 'transformed_position' in locals() and transformed_position is not None:
             if self.last_detected_position is not None and \
-            np.linalg.norm(current_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
+            np.linalg.norm(transformed_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
                 self.detection_counter += 1
             else:
                 self.detection_counter = 1
-            self.last_detected_position = current_position
+            self.last_detected_position = transformed_position
 
             if self.detection_counter >= self.DETECTION_THRESHOLD:
-                distance = np.linalg.norm(current_position)
+                distance = np.linalg.norm(transformed_position)
                 if self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE and not self.service_call_in_progress:
                     self.service_call_in_progress = True
                     request = PickPlace.Request()
-                    request.x, request.y, request.z = current_position.tolist()
-                    self.get_logger().info(f"Requesting PickPlace service for stable target at {distance:.2f}m.")
+                    request.x, request.y, request.z = transformed_position.tolist()
+                    self.get_logger().info(f"Requesting PickPlace service for stable target at {distance:.2f}m (from {target_frame}).")
                     future = self.pick_place_client.call_async(request)
                     future.add_done_callback(self.pick_place_response_callback)
                 elif not (self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE):
@@ -355,6 +380,7 @@ class YoloVisionNode(Node):
             self.last_detected_position = None
             
         return supply_found_this_frame
+
     def publish_compressed_viz(self, publisher, cv_image):
         msg = CompressedImage()
         msg.header.stamp = self.get_clock().now().to_msg()
