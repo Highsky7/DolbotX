@@ -81,7 +81,7 @@ class YoloBevDrivableAreaNode(Node):
         # ❗❗❗ 중요: 이 값은 실제 로봇에 맞게 정확히 측정하여 수정해야 합니다. ❗❗❗
         self.declare_parameter('camera_to_rear_axle_offset', 0.375)
         self.declare_parameter('smoothing_alpha', 0.6)
-        self.declare_parameter('lookahead_distance', 0.4)
+        self.declare_parameter('lookahead_distance', 0.7)
 
         # 파라미터 가져오기
         yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
