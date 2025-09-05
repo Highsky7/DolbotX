@@ -7,7 +7,7 @@ ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-fil
 -> 2-2터미널(Right Camera-topsync):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
 -> 2-3터미널(Driving Camera-logitech):
-ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/highsky/DolbotX/src/usb_cam/config/params_3.yaml
+ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
 3번 터미널
 ros2 run robot_vision onnx_multi_traffic
 4번 터미널
