@@ -92,9 +92,9 @@ class YoloBezierAngleNode(Node):
         # 경로 생성 파라미터
         self.declare_parameter('yolo_model_path', './drive_area.onnx')
         self.declare_parameter('yolo_confidence', 0.5)
-        self.declare_parameter('initial_lookahead_distance', 240.0)
+        self.declare_parameter('initial_lookahead_distance', 500.0)
         self.declare_parameter('car_position_pixel_u', 320.0)
-        self.declare_parameter('car_position_pixel_v', 600.0)
+        self.declare_parameter('car_position_pixel_v', 720.0)
 
         # [Hinton's NEW] 조향각 제어 파라미터
         self.declare_parameter('angle_scaling_factor', 1.0) # 조향각 보정 계수
@@ -126,7 +126,7 @@ class YoloBezierAngleNode(Node):
         self.viz_pub = self.create_publisher(CompressedImage, '/path_planning/drivable_area/viz/compressed', 10)
         self.status_pub = self.create_publisher(Bool, '/path_planning/drivable_area/status', 10)
         
-        qos_profile_sensor_data = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
+        qos_profile_sensor_data = QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE, history=QoSHistoryPolicy.KEEP_LAST, depth=1)
         logitech_img_topic = '/camera3/image_raw/compressed'
         self.img_sub = self.create_subscription(CompressedImage, logitech_img_topic, self.planning_callback, qos_profile_sensor_data)
         self.get_logger().info(f"✅ Node initialized. Publishing Float64 to '{steering_angle_topic}'.")
@@ -145,17 +145,25 @@ class YoloBezierAngleNode(Node):
             
             steering_angle_rad, viz_data, combined_mask = self.calculate_steering_with_bezier(results[0])
             
-            steer_msg = Float64()
-            if steering_angle_rad is not None:
-                # [Hinton's NEW] 최종 조향각에 보정 계수를 곱하여 발행
-                steer_msg.data = self.ANGLE_SCALING_FACTOR * steering_angle_rad
-            else:
-                steer_msg.data = 0.0
+            # ================================================================= #
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 이 부분이 수정되었습니다 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
+            # 시각화를 위한 최종 조향각 변수 (검출 실패 시 0.0)
+            final_viz_angle = 0.0
             
-            self.steer_pub.publish(steer_msg)
+            if steering_angle_rad is not None:
+                # 검출에 성공했을 때만 조향각을 계산하고 발행합니다.
+                final_viz_angle = self.ANGLE_SCALING_FACTOR * steering_angle_rad
+                steer_msg = Float64()
+                steer_msg.data = final_viz_angle
+                self.steer_pub.publish(steer_msg)
+            # else:
+            #     # 주행 가능 영역이 검출되지 않으면 아무것도 발행하지 않습니다.
+            #     pass
 
             if self.viz_pub.get_subscription_count() > 0:
-                self.publish_visualization(cv_color, combined_mask, viz_data, steer_msg.data)
+                self.publish_visualization(cv_color, combined_mask, viz_data, final_viz_angle)
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 이 부분이 수정되었습니다 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
+            # ================================================================= #
 
         except Exception:
             self.get_logger().error(f"Error in planning worker:\n{traceback.format_exc()}")
@@ -219,7 +227,7 @@ class YoloBezierAngleNode(Node):
         # [Hinton's MOD] 최종 발행되는 조향각을 Degree로 변환하여 표시
         steer_deg = math.degrees(final_steering_angle_rad)
         steer_text = f"Steer Angle: {steer_deg:.1f} deg"
-        cv2.putText(viz_image, steer_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(viz_image, steer_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
         
         _, jpeg_buffer = cv2.imencode('.jpg', viz_image)
         viz_msg = CompressedImage(data=jpeg_buffer.tobytes(), format="jpeg")

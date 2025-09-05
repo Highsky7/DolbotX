@@ -79,7 +79,7 @@ class YoloBevDrivableAreaNode(Node):
         self.declare_parameter('wheelbase', 0.6)
         # [힌튼의 수정] 카메라-후륜축 거리 파라미터 선언 (단위: 미터)
         # ❗❗❗ 중요: 이 값은 실제 로봇에 맞게 정확히 측정하여 수정해야 합니다. ❗❗❗
-        self.declare_parameter('camera_to_rear_axle_offset', 0.375)
+        self.declare_parameter('camera_to_rear_axle_offset', 0.27)
         self.declare_parameter('smoothing_alpha', 0.6)
         self.declare_parameter('lookahead_distance', 0.7)
 
@@ -172,14 +172,26 @@ class YoloBevDrivableAreaNode(Node):
             filtered_mask = self.filter_drivable_mask(combined_mask)
             steering_angle_rad, viz_data = self.calculate_steering_from_area(filtered_mask)
             
-            steer_msg = Float64()
-            # 조향각이 None일 경우 0.0으로 설정하여 항상 유효한 값을 퍼블리시
-            steer_msg.data = steering_angle_rad if steering_angle_rad is not None else 0.0
-            self.steer_pub.publish(steer_msg)
+            # ================================================================= #
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 이 부분이 수정되었습니다 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
+            # 시각화를 위한 최종 조향각 변수 (검출 실패 시 0.0)
+            final_viz_angle = 0.0
 
+            if steering_angle_rad is not None:
+                # 검출 성공 시에만 조향각을 계산하고 발행
+                final_viz_angle = steering_angle_rad
+                steer_msg = Float64()
+                steer_msg.data = final_viz_angle
+                self.steer_pub.publish(steer_msg)
+            # else:
+            #     # 주행 가능 영역이 검출되지 않으면 아무것도 발행하지 않습니다.
+            #     pass
+            
             # [Hinton's Optimization] 구독자가 있을 때만 시각화 연산 수행
             if self.viz_pub.get_subscription_count() > 0:
-                self.publish_visualization(bev_image, filtered_mask, viz_data, steering_angle_rad)
+                self.publish_visualization(bev_image, filtered_mask, viz_data, final_viz_angle)
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 이 부분이 수정되었습니다 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
+            # ================================================================= #
 
         except Exception:
             self.get_logger().error(f"Error in planning worker:\n{traceback.format_exc()}")
