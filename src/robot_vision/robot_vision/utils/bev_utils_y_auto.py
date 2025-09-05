@@ -35,7 +35,7 @@ class BevParamSetterNode(Node):
         # ROS2 토픽 구독자
         self.subscription = self.create_subscription(
             CompressedImage,
-            '/camera/color/image_raw/compressed',  # 사용자 요청 토픽
+            '/camera3/image_raw/compressed',  # 사용자 요청 토픽
             self.image_callback,
             10
         )
