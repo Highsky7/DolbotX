@@ -2,8 +2,8 @@ steering_to_diff:
   ros__parameters:
     wheelbase: 0.60
     track_width: 0.516
-    v_nominal: 1.50
-    max_speed: 2.00
+    v_nominal: 0.55
+    max_speed: 0.55
     kappa_gain: 1.0
     max_steering_angle: 0.60
     use_speed_topic: false
