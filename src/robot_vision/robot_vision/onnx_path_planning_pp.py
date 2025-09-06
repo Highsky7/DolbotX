@@ -62,6 +62,11 @@ def overlay_polyline(image, coeff, color=(0, 255, 0), step=4, thickness=3):
 
 
 class YoloBevDrivableAreaNode(Node):
+    '''
+    Top Line of Bev Image  - Bottom Line of Bev Image(From Camera) = 2.33m - 0.66m
+    Middle Line of Bev Image(From Camera) = 1.495m
+    Available Lookahead Distance range min ~ Max : 0.66m ~ 2.33m
+    '''
     # [Hinton's Optimization] 알고리즘 상수 정의
     _MORPH_KSIZE = 7
     _MIN_AREA_SIZE = 15000
@@ -81,7 +86,7 @@ class YoloBevDrivableAreaNode(Node):
         # ❗❗❗ 중요: 이 값은 실제 로봇에 맞게 정확히 측정하여 수정해야 합니다. ❗❗❗
         self.declare_parameter('camera_to_rear_axle_offset', 0.27)
         self.declare_parameter('smoothing_alpha', 0.6)
-        self.declare_parameter('lookahead_distance', 0.8)
+        self.declare_parameter('lookahead_distance', 1.0)
 
         # 파라미터 가져오기
         yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
@@ -131,7 +136,7 @@ class YoloBevDrivableAreaNode(Node):
             depth=1
         )
 
-        logitech_img_topic = '/camera3/image_raw/compressed'
+        logitech_img_topic = '/camera/color/image_raw/compressed'
         self.img_sub = self.create_subscription(
             CompressedImage, 
             logitech_img_topic, 
