@@ -73,7 +73,7 @@ class YoloBevDrivableAreaNode(Node):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         # 파라미터 선언
-        self.declare_parameter('yolo_model_path', './drive_area.onnx')
+        self.declare_parameter('yolo_model_path', './drive_area2.onnx')
         self.declare_parameter('yolo_confidence', 0.5)
         self.declare_parameter('bev_param_file', './bev_params.npz')
         self.declare_parameter('wheelbase', 0.6)
