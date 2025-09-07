@@ -20,12 +20,12 @@ class SteeringToDiff(Node):
         # ===== 기본 파라미터 =====
         self.declare_parameter('wheelbase', 0.60)              # L [m]
         self.declare_parameter('track_width', 0.516)           # W [m]
-        self.declare_parameter('v_nominal', 0.40)              # [m/s]
+        self.declare_parameter('v_nominal', 0.50)              # [m/s]
         self.declare_parameter('max_speed', 0.55)              # [m/s]
-        self.declare_parameter('kappa_gain', 1.5)
-        self.declare_parameter('max_steering_angle', 1.5)      # [rad]
+        self.declare_parameter('kappa_gain', 2.5)
+        self.declare_parameter('max_steering_angle', 1.0)      # [rad]
         self.declare_parameter('use_speed_topic', False)
-        self.declare_parameter('control_hz', 50.0)
+        self.declare_parameter('control_hz', 30.0)
 
         # 안전 상/하한
         self.declare_parameter('speed_min', -5.5)              # [m/s]
