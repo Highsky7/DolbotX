@@ -78,7 +78,7 @@ class BEVRecorderNode(Node):
                 os.makedirs(output_dir)
                 self.get_logger().info(f"Created output directory: {output_dir}")
 
-            fourcc = cv2.VideoWriter_fourcc(*'x264')
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             self.video_writer = cv2.VideoWriter(self.output_path, fourcc, self.fps, (self.bev_w, self.bev_h))
             if not self.video_writer.isOpened():
                 raise IOError("Cannot open video writer.")

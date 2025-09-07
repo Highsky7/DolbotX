@@ -215,7 +215,9 @@ class YoloVisionNode(Node):
                     if label == 'ROKA': roka_found = True
                     elif label == 'Enemy': enemy_found = True
             
-            led_data = "ROKA" if roka_found else "ENEMY" if enemy_found else "NONE"
+            # 발행할 문자열을 모두 소문자로 변경합니다.
+            led_data = "roka" if roka_found else "enemy" if enemy_found else "none"
+            
             self.led_pub.publish(String(data=led_data))
             
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
