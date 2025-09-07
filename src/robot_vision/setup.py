@@ -34,6 +34,7 @@ setup(
             'bev_utilis = robot_vision.utils.bev_utils:main',
             'hsv_picker = robot_vision.utils.hsv_picker:main',
             'bev_recorder = robot_vision.utils.bev_recorder:main',
+            'recorder = robot_vision.utils.recorder:main',
             'fire_detect = robot_vision.fire_detector:main',
             'pick_place_server = robot_vision.pick_place_server:main',
         ],
