@@ -86,7 +86,7 @@ class YoloBevDrivableAreaNode(Node):
         # ❗❗❗ 중요: 이 값은 실제 로봇에 맞게 정확히 측정하여 수정해야 합니다. ❗❗❗
         self.declare_parameter('camera_to_rear_axle_offset', 0.27)
         self.declare_parameter('smoothing_alpha', 0.6)
-        self.declare_parameter('lookahead_distance', 1.0)
+        self.declare_parameter('lookahead_distance', 0.8)
 
         # 파라미터 가져오기
         yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
@@ -136,7 +136,7 @@ class YoloBevDrivableAreaNode(Node):
             depth=1
         )
 
-        logitech_img_topic = '/camera/color/image_raw/compressed'
+        logitech_img_topic = '/camera3/image_raw/compressed'
         self.img_sub = self.create_subscription(
             CompressedImage, 
             logitech_img_topic, 
