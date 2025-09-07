@@ -38,15 +38,12 @@ static void applyCommand(const char* cmd) {
   if (strcmp(cmd, "roka") == 0) {
     digitalWrite(Green_Pin, HIGH);
     digitalWrite(Red_Pin, LOW);
-    Serial.println(F("LED: GREEN (roka)"));
   } else if (strcmp(cmd, "enemy") == 0) {
     digitalWrite(Green_Pin, LOW);
     digitalWrite(Red_Pin, HIGH);
-    Serial.println(F("LED: RED (enemy)"));
   } else { // "none" 또는 그 외 문자열
     digitalWrite(Green_Pin, LOW);
     digitalWrite(Red_Pin, LOW);
-    Serial.println(F("LED: OFF (none/unknown)"));
   }
 }
 
