@@ -1,13 +1,14 @@
-1번 터미널
-realros
-2번터미널
+
+1번터미널
 sudo udevadm trigger
--> 2-1터미널(Left Camera-abko):
-ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
--> 2-2터미널(Right Camera-topsync):
-ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
--> 2-3터미널(Driving Camera-logitech):
+-> 1-1터미널(Driving Camera-logitech):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
+-> 1-2터미널(Left Camera-abko):
+ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
+-> 1-3터미널(Right Camera-topsync):
+ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
+2번 터미널
+realros
 3번 터미널
 ros2 run robot_vision onnx_multi_traffic
 4번 터미널
