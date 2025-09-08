@@ -74,11 +74,11 @@ class YoloBevDrivableAreaNode(Node):
     
     # [힌튼의 핵심 개선] 신뢰도 기반 동적 스무딩을 위한 파라미터
     # 이 포인트 수 이상이면 새로운 경로를 '완전히 신뢰'
-    _MAX_CONFIDENCE_POINTS = 5000 
+    _MAX_CONFIDENCE_POINTS = 32000
     # 이 포인트 수 이하이면 새로운 경로를 '최소한으로 신뢰'
-    _MIN_CONFIDENCE_POINTS = 100 
+    _MIN_CONFIDENCE_POINTS = 2000
     # 신뢰도가 높을 때 적용할 스무딩 알파 값 (새로운 경로를 더 많이 반영)
-    _MAX_SMOOTHING_ALPHA = 0.7 
+    _MAX_SMOOTHING_ALPHA = 0.6
     # 신뢰도가 낮을 때 적용할 스무딩 알파 값 (기존 경로를 더 많이 유지)
     _MIN_SMOOTHING_ALPHA = 0.2
     
@@ -144,7 +144,7 @@ class YoloBevDrivableAreaNode(Node):
             depth=1
         )
 
-        logitech_img_topic = '/camera3/image_raw/compressed'
+        logitech_img_topic = '/camera/color/image_raw/compressed'
         self.img_sub = self.create_subscription(
             CompressedImage, 
             logitech_img_topic, 
@@ -252,13 +252,13 @@ class YoloBevDrivableAreaNode(Node):
             if current_path_coeff is not None:
                 # 1. 포인트 수에 기반한 신뢰도 계산 (0.0 ~ 1.0)
                 confidence = np.interp(num_points, 
-                                       [_MIN_CONFIDENCE_POINTS, _MAX_CONFIDENCE_POINTS], 
+                                       [self._MIN_CONFIDENCE_POINTS, self._MAX_CONFIDENCE_POINTS], 
                                        [0.0, 1.0])
                 
                 # 2. 신뢰도에 따른 동적 alpha 값 계산
                 dynamic_alpha = np.interp(confidence, 
                                           [0.0, 1.0], 
-                                          [_MIN_SMOOTHING_ALPHA, _MAX_SMOOTHING_ALPHA])
+                                          [self._MIN_SMOOTHING_ALPHA, self._MAX_SMOOTHING_ALPHA])
 
                 # 3. 계산된 동적 alpha를 사용하여 경로 계수 스무딩
                 if self.tracked_center_path_coeff is None:
