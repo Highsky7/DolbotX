@@ -20,16 +20,16 @@ class SteeringToDiff(Node):
         # ===== 기본 파라미터 =====
         self.declare_parameter('wheelbase', 0.60)              # L [m]
         self.declare_parameter('track_width', 0.516)           # W [m]
-        self.declare_parameter('v_nominal', 0.40)              # [m/s]
-        self.declare_parameter('max_speed', 0.55)              # [m/s]
-        self.declare_parameter('kappa_gain', 1.5)
+        self.declare_parameter('v_nominal', 0.50)              # [m/s]
+        self.declare_parameter('max_speed', 0.6)              # [m/s]
+        self.declare_parameter('kappa_gain', 3.0)
         self.declare_parameter('max_steering_angle', 1.5)      # [rad]
         self.declare_parameter('use_speed_topic', False)
-        self.declare_parameter('control_hz', 50.0)
+        self.declare_parameter('control_hz', 30.0)
 
         # 안전 상/하한
-        self.declare_parameter('speed_min', -5.5)              # [m/s]
-        self.declare_parameter('speed_max',  5.5)              # [m/s] (토픽 입력 클램프)
+        self.declare_parameter('speed_min', -6.0)              # [m/s]
+        self.declare_parameter('speed_max',  6.0)              # [m/s] (토픽 입력 클램프)
         self.declare_parameter('max_curvature', 0.0)           # [1/m], 0이면 비활성(=각도 기반)
 
         # 토픽
@@ -50,6 +50,11 @@ class SteeringToDiff(Node):
         self.declare_parameter('enable_filters', False)
         self.declare_parameter('angle_alpha', 0.2)
         self.declare_parameter('speed_alpha', 0.2)
+
+        # === 조향각 기반 감속 ===
+        self.declare_parameter('speed_reduce_enable', True)    # 각도 기반 감속 On/Off
+        self.declare_parameter('speed_scale_min', 0.4)         # 급회전 시 최소 스케일
+        self.declare_parameter('speed_reduce_ang_max', 0.6)    # 이 각도 이상이면 최소 스케일
 
         # 내부 상태
         self._delta_raw = 0.0
@@ -106,7 +111,9 @@ class SteeringToDiff(Node):
             f"v0={self.v_nominal:.3f} max_speed={self.max_speed:.3f} "
             f"use_speed_topic={self.use_speed_topic} hz={self.control_hz:.1f} "
             f"QoS={self.qos_reliability} depth={self.qos_history_depth} "
-            f"filters={self.enable_filters} max_curv={self.max_curvature:.3f}"
+            f"filters={self.enable_filters} max_curv={self.max_curvature:.3f} "
+            f"speed_reduce={self.speed_reduce_enable} "
+            f"scale_min={self.speed_scale_min:.2f} ang_max={self.speed_reduce_ang_max:.3f}"
         )
 
     # ---- 파라미터 로드/검증 ----
@@ -139,6 +146,13 @@ class SteeringToDiff(Node):
         self.enable_filters = bool(gp('enable_filters').value)
         self.angle_alpha = float(max(1e-6, min(1.0, float(gp('angle_alpha').value))))
         self.speed_alpha = float(max(1e-6, min(1.0, float(gp('speed_alpha').value))))
+
+        # 감속 파라미터
+        self.speed_reduce_enable = bool(gp('speed_reduce_enable').value)
+        self.speed_scale_min = float(gp('speed_scale_min').value)
+        self.speed_scale_min = max(0.0, min(1.0, self.speed_scale_min))  # 0~1 보정
+        self.speed_reduce_ang_max = float(gp('speed_reduce_ang_max').value)
+        self.speed_reduce_ang_max = max(1e-6, self.speed_reduce_ang_max)
 
         if self.L <= 0.0 or self.W <= 0.0 or self.max_speed <= 0.0:
             self.get_logger().error("Invalid params: L, W, max_speed must be > 0")
@@ -179,6 +193,21 @@ class SteeringToDiff(Node):
             self.get_logger().info(f"[{source}] GO 수신 → 주행 모드 복귀")
         else:
             self.get_logger().warn(f"[{source}] 알 수 없는 명령: '{cmd}' (사용 가능: 'stop'|'go')")
+
+    # ---- 각도 기반 속도 스케일 계산 ----
+    def _compute_speed_scale(self, delta: float) -> float:
+        """|delta|가 커질수록 [1.0 -> speed_scale_min]로 선형 감소."""
+        if not self.speed_reduce_enable:
+            return 1.0
+        a = abs(delta)
+        if a <= self.ang_deadzone:
+            return 1.0
+        if a >= self.speed_reduce_ang_max:
+            return self.speed_scale_min
+        # 선형 보간
+        t = (a - self.ang_deadzone) / (self.speed_reduce_ang_max - self.ang_deadzone)
+        scale = 1.0 + t * (self.speed_scale_min - 1.0)
+        return max(self.speed_scale_min, min(1.0, scale))
 
     # ---- 콜백 ----
     def cb_angle(self, msg: Float64):
@@ -221,19 +250,23 @@ class SteeringToDiff(Node):
             self._publish_both(0.0, 0.0)
             return
 
-        # 선속도 v
+        # 선속도 v (명령 소스 선택)
         if self.use_speed_topic:
             v = self._v_cmd_filt if self.enable_filters else self._v_cmd_raw
         else:
             v = self.v_nominal
 
+        # 조향각
+        delta = self._delta_filt if self.enable_filters else self._delta_raw
+
+        # 각도 기반 감속 스케일 적용 (부호 유지)
+        scale = self._compute_speed_scale(delta)
+        v = math.copysign(abs(v) * scale, v)
+
         # 저속 데드존
         if abs(v) < self.v_deadzone:
             self._publish_both(0.0, 0.0)
             return
-
-        # 조향각
-        delta = self._delta_filt if self.enable_filters else self._delta_raw
 
         # 소각 데드존 → κ=0
         if abs(delta) < self.ang_deadzone:
@@ -262,9 +295,9 @@ class SteeringToDiff(Node):
         # 정규화 포화(비율 유지)
         peak = max(abs(v_left), abs(v_right), 1e-9)
         if peak > self.max_speed:
-            scale = self.max_speed / peak
-            v_left *= scale
-            v_right *= scale
+            scale2 = self.max_speed / peak
+            v_left *= scale2
+            v_right *= scale2
 
         # 아주 작은 잔여값 제거(수치 잡음)
         if abs(v_left) < 1e-6:

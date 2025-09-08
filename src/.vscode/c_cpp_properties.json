@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/junseong/DolbotX/install/usb_cam/include/**",
+        "/home/junseong/DolbotX/install/mtc_interfaces/include/**",
+        "/home/junseong/ros2_ws/install/usb_cam/include/**",
+        "/home/junseong/ros2_ws/install/mtc_interfaces/include/**",
+        "/opt/ros/humble/include/**",
+        "/home/junseong/DolbotX/src/usb_cam/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

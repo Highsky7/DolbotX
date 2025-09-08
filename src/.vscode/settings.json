@@ -1,0 +1,28 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/junseong/DolbotX/install/steering_to_diff/lib/python3.10/site-packages",
+        "/home/junseong/DolbotX/install/robot_vision/lib/python3.10/site-packages",
+        "/home/junseong/DolbotX/install/mtc_interfaces/local/lib/python3.10/dist-packages",
+        "/home/junseong/DolbotX/install/led_serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/wheel_serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/steering_to_diff/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/robot_vision/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/mtc_interfaces/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/junseong/DolbotX/install/steering_to_diff/lib/python3.10/site-packages",
+        "/home/junseong/DolbotX/install/robot_vision/lib/python3.10/site-packages",
+        "/home/junseong/DolbotX/install/mtc_interfaces/local/lib/python3.10/dist-packages",
+        "/home/junseong/DolbotX/install/led_serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/wheel_serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/steering_to_diff/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/serial_bridge/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/robot_vision/lib/python3.10/site-packages",
+        "/home/junseong/ros2_ws/install/mtc_interfaces/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}
