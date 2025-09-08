@@ -1,0 +1,38 @@
+steering_to_diff:
+  ros__parameters:
+    # 기구 파라미터
+    wheelbase: 0.60
+    track_width: 0.516
+
+    # 속도/제한
+    v_nominal: 0.50
+    max_speed: 0.55
+    speed_min: -5.5
+    speed_max:  5.5
+    kappa_gain: 3.0
+    max_steering_angle: 1.5        # rad
+    max_curvature: 0.0             # 0.0이면 비활성
+
+    # 토픽
+    steering_angle_topic: "/steering_angle"
+    speed_topic: "/target_speed"
+    left_topic: "/cmd_vel_left"
+    right_topic: "/cmd_vel_right"
+    traffic_cmd_topic: "/traffic_command"
+
+    # QoS
+    qos_history_depth: 10
+    qos_reliability: "RELIABLE"    # "BEST_EFFORT" 가능
+
+    # 데드존/필터
+    v_deadzone: 0.001
+    ang_deadzone: 0.0001
+    enable_filters: false
+    angle_alpha: 0.2
+    speed_alpha: 0.2
+
+    # 제어주기
+    control_hz: 50.0
+
+    # 런타임 속도 입력 사용 여부
+    use_speed_topic: false
