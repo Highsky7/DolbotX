@@ -345,7 +345,7 @@ class YoloVisionNode(Node):
                             self.get_logger().warn(f"좌표 변환 실패: {e}", throttle_duration_sec=5.0)
                             return False
 
-                        label = f"Supply({target_frame}): x={transformed_position[0]:.2f}m, y={transformed_position[1]:.2f}m, z={transformed_position[2]:.2f}m"
+                        label = f"x={transformed_position[0]:.2f}m, y={transformed_position[1]:.2f}m, z={transformed_position[2]:.2f}m"
 
                         scale_w = self.intrinsics.width / self.proc_width
                         scale_h = self.intrinsics.height / self.proc_height
