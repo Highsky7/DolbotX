@@ -96,7 +96,7 @@ class YoloBevDrivableAreaNode(Node):
         # 카메라-후륜축 거리 파라미터 선언 (단위: 미터)
         # ❗❗❗ 중요: 이 값은 실제 로봇에 맞게 정확히 측정하여 수정해야 합니다. ❗❗❗
         self.declare_parameter('camera_to_rear_axle_offset', 0.27)
-        self.declare_parameter('lookahead_distance', 1.0)
+        self.declare_parameter('lookahead_distance', 0.66)
 
         # 파라미터 가져오기
         yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value

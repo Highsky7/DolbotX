@@ -47,6 +47,7 @@ class SteeringToDiff(Node):
         # 데드존/필터
         self.declare_parameter('v_deadzone', 1e-3)             # [m/s]
         self.declare_parameter('ang_deadzone', 1e-4)           # [rad]
+        self.declare_parameter('cmd_vel_deadzone', 0.28)        # [m/s] 최종 출력 데드존 (추가됨)
         self.declare_parameter('enable_filters', False)
         self.declare_parameter('angle_alpha', 0.2)
         self.declare_parameter('speed_alpha', 0.2)
@@ -113,7 +114,8 @@ class SteeringToDiff(Node):
             f"QoS={self.qos_reliability} depth={self.qos_history_depth} "
             f"filters={self.enable_filters} max_curv={self.max_curvature:.3f} "
             f"speed_reduce={self.speed_reduce_enable} "
-            f"scale_min={self.speed_scale_min:.2f} ang_max={self.speed_reduce_ang_max:.3f}"
+            f"scale_min={self.speed_scale_min:.2f} ang_max={self.speed_reduce_ang_max:.3f} "
+            f"cmd_vel_dz={self.cmd_vel_deadzone:.3f}"
         )
 
     # ---- 파라미터 로드/검증 ----
@@ -143,6 +145,7 @@ class SteeringToDiff(Node):
 
         self.v_deadzone = float(gp('v_deadzone').value)
         self.ang_deadzone = float(gp('ang_deadzone').value)
+        self.cmd_vel_deadzone = float(gp('cmd_vel_deadzone').value) # 추가됨
         self.enable_filters = bool(gp('enable_filters').value)
         self.angle_alpha = float(max(1e-6, min(1.0, float(gp('angle_alpha').value))))
         self.speed_alpha = float(max(1e-6, min(1.0, float(gp('speed_alpha').value))))
@@ -299,10 +302,10 @@ class SteeringToDiff(Node):
             v_left *= scale2
             v_right *= scale2
 
-        # 아주 작은 잔여값 제거(수치 잡음)
-        if abs(v_left) < 1e-6:
+        # ==== 수정된 부분: 최종 cmd_vel 데드존 적용 ====
+        if abs(v_left) <= self.cmd_vel_deadzone:
             v_left = 0.0
-        if abs(v_right) < 1e-6:
+        if abs(v_right) <= self.cmd_vel_deadzone:
             v_right = 0.0
 
         self._publish_both(v_left, v_right)

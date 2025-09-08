@@ -35,7 +35,7 @@ class VideoRecorder(Node):
         # /camera1/image_raw/compressed 토픽 구독자 설정
         self.subscription = self.create_subscription(
             CompressedImage,
-            '/camera1/image_raw/compressed',
+            '/camera/color/image_raw/compressed',
             self.image_callback,
             10)
         self.subscription  # prevent unused variable warning

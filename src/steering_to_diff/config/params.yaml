@@ -5,11 +5,11 @@ steering_to_diff:
     track_width: 0.516
 
     # 속도/제한
-    v_nominal: 0.50
-    max_speed: 0.55
+    v_nominal: 0.5
+    max_speed: 0.6
     speed_min: -5.5
     speed_max:  5.5
-    kappa_gain: 3.0
+    kappa_gain: 3.2
     max_steering_angle: 1.5        # rad
     max_curvature: 0.0             # 0.0이면 비활성
 
