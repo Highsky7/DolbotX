@@ -144,7 +144,7 @@ class YoloBevDrivableAreaNode(Node):
             depth=1
         )
 
-        logitech_img_topic = '/camera/color/image_raw/compressed'
+        logitech_img_topic = '/camera3/image_raw/compressed'
         self.img_sub = self.create_subscription(
             CompressedImage, 
             logitech_img_topic, 
@@ -251,22 +251,22 @@ class YoloBevDrivableAreaNode(Node):
             # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [힌튼의 핵심 개선] 동적 스무딩 로직 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
             if current_path_coeff is not None:
                 # 1. 포인트 수에 기반한 신뢰도 계산 (0.0 ~ 1.0)
-                confidence = np.interp(num_points, 
-                                       [self._MIN_CONFIDENCE_POINTS, self._MAX_CONFIDENCE_POINTS], 
+                confidence = np.interp(num_points,
+                                       [self._MIN_CONFIDENCE_POINTS, self._MAX_CONFIDENCE_POINTS],
                                        [0.0, 1.0])
-                
+
                 # 2. 신뢰도에 따른 동적 alpha 값 계산
-                dynamic_alpha = np.interp(confidence, 
-                                          [0.0, 1.0], 
+                dynamic_alpha = np.interp(confidence,
+                                          [0.0, 1.0],
                                           [self._MIN_SMOOTHING_ALPHA, self._MAX_SMOOTHING_ALPHA])
 
                 # 3. 계산된 동적 alpha를 사용하여 경로 계수 스무딩
                 if self.tracked_center_path_coeff is None:
                     self.tracked_center_path_coeff = current_path_coeff
                 else:
-                    self.tracked_center_path_coeff = (dynamic_alpha * current_path_coeff + 
+                    self.tracked_center_path_coeff = (dynamic_alpha * current_path_coeff +
                                                       (1 - dynamic_alpha) * self.tracked_center_path_coeff)
-                
+
                 self.get_logger().debug(f"Path smoothed with dynamic alpha: {dynamic_alpha:.2f} (confidence: {confidence:.2f}, points: {num_points})")
             # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [힌튼의 핵심 개선] 동적 스무딩 로직 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
             # ================================================================= #
