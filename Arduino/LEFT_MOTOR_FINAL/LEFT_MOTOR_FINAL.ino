@@ -24,7 +24,7 @@ const double WHEEL_DIAM = 0.135;          // 휠 지름 [m]
 const double WHEEL_CIRC = M_PI * WHEEL_DIAM; // 휠 원주 [m]
 
 // PID 게인
-const float KP = 2.7;
+const float KP = 2.8;
 const float KI = 3.4;
 const float KD = 0.0;
 const double I_MAX = 3000.0;
