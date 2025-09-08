@@ -151,7 +151,7 @@ class YoloBevDrivableAreaNode(Node):
             self.planning_callback, 
             qos_profile_sensor_data
         )
-        self.get_logger().info(f"✅ Node initialized. Subscribing to '{logitech_img_topic}' with BEST_EFFORT QoS.")
+        self.get_logger().info(f"✅ Node initialized. Subscribing to '{logitech_img_topic}' with RELIABLE QoS.")
 
     def planning_callback(self, compressed_img_msg):
         if self._is_shutting_down: return

@@ -143,7 +143,7 @@ class YoloBevDrivableAreaNode(Node):
             self.planning_callback, 
             qos_profile_sensor_data  # 최적화된 QoS 적용
         )
-        self.get_logger().info(f"✅ Node initialized. Subscribing to '{logitech_img_topic}' with BEST_EFFORT QoS.")
+        self.get_logger().info(f"✅ Node initialized. Subscribing to '{logitech_img_topic}' with RELIABLE QoS.")
 
     def planning_callback(self, compressed_img_msg):
         # [Hinton's Optimization] 콜백은 오직 데이터 전달만 수행하여 초고속으로 반응
