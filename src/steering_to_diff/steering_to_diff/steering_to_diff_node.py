@@ -37,7 +37,8 @@ class SteeringToDiff(Node):
         self.declare_parameter('left_topic', '/cmd_vel_left')
         self.declare_parameter('right_topic', '/cmd_vel_right')
         self.declare_parameter('speed_topic', '/target_speed')
-        self.declare_parameter('traffic_cmd_topic', '/traffic_command')  # 추가: 정지/재개 명령
+        self.declare_parameter('traffic_cmd_topic', '/traffic_command')   # 정지/재개 명령
+        self.declare_parameter('supply_cmd_topic',  '/supply_command')    # 정지/재개 명령(동일 로직)
 
         # QoS
         self.declare_parameter('qos_history_depth', 10)
@@ -76,13 +77,16 @@ class SteeringToDiff(Node):
         left_topic = self.get_parameter('left_topic').value
         right_topic = self.get_parameter('right_topic').value
         traffic_topic = self.get_parameter('traffic_cmd_topic').value
+        supply_topic  = self.get_parameter('supply_cmd_topic').value
 
         # 구독자/퍼블리셔
         self.create_subscription(Float64, ang_topic, self.cb_angle, qos)
         if self.use_speed_topic:
             self.create_subscription(Float64, speed_topic, self.cb_speed, qos)
-        # 추가: 정지/재개 명령 구독
+
+        # 정지/재개 명령 구독(두 토픽 동일 로직)
         self.create_subscription(String, traffic_topic, self.cb_traffic, qos)
+        self.create_subscription(String, supply_topic,  self.cb_supply,  qos)
 
         self.pub_left = self.create_publisher(Float32, left_topic, qos)
         self.pub_right = self.create_publisher(Float32, right_topic, qos)
@@ -160,6 +164,22 @@ class SteeringToDiff(Node):
             self.get_logger().warn("use_speed_topic changed; restart node to re-create subscriptions if needed.")
         return SetParametersResult(successful=True)
 
+    # ---- 공통 stop/go 처리 ----
+    def _handle_stop_go(self, source: str, cmd: str):
+        c = (cmd or '').strip().lower()
+        if c == 'stop':
+            self._traffic_mode = 'stop'
+            self._publish_both(0.0, 0.0)  # 즉시 정지
+            self.get_logger().info(f"[{source}] STOP 수신 → 정지 모드")
+        elif c == 'go':
+            self._traffic_mode = 'go'
+            # 필요 시 필터 상태 원복:
+            # self._v_cmd_filt = self._v_cmd_raw
+            # self._delta_filt = self._delta_raw
+            self.get_logger().info(f"[{source}] GO 수신 → 주행 모드 복귀")
+        else:
+            self.get_logger().warn(f"[{source}] 알 수 없는 명령: '{cmd}' (사용 가능: 'stop'|'go')")
+
     # ---- 콜백 ----
     def cb_angle(self, msg: Float64):
         delta_in = float(msg.data)
@@ -189,19 +209,10 @@ class SteeringToDiff(Node):
             self._v_cmd_filt = self._v_cmd_raw
 
     def cb_traffic(self, msg: String):
-        cmd = (msg.data or '').strip().lower()
-        if cmd == 'stop':
-            self._traffic_mode = 'stop'
-            self._publish_both(0.0, 0.0)  # 즉시 정지 반응
-            self.get_logger().info("[traffic] STOP 수신 → 정지 모드")
-        elif cmd == 'go':
-            self._traffic_mode = 'go'
-            # 필요 시 필터 상태를 원복하고 싶다면 다음 주석 해제:
-            # self._v_cmd_filt = self._v_cmd_raw
-            # self._delta_filt = self._delta_raw
-            self.get_logger().info("[traffic] GO 수신 → 주행 모드 복귀")
-        else:
-            self.get_logger().warn(f"[traffic] 알 수 없는 명령: '{msg.data}' (사용 가능: 'stop'|'go')")
+        self._handle_stop_go('traffic', msg.data)
+
+    def cb_supply(self, msg: String):
+        self._handle_stop_go('supply', msg.data)
 
     # ---- 제어 주기 ----
     def on_timer(self):
@@ -280,4 +291,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
