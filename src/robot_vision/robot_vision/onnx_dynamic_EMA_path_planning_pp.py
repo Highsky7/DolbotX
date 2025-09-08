@@ -80,7 +80,7 @@ class YoloBevDrivableAreaNode(Node):
     # 신뢰도가 높을 때 적용할 스무딩 알파 값 (새로운 경로를 더 많이 반영)
     _MAX_SMOOTHING_ALPHA = 0.6
     # 신뢰도가 낮을 때 적용할 스무딩 알파 값 (기존 경로를 더 많이 유지)
-    _MIN_SMOOTHING_ALPHA = 0.2
+    _MIN_SMOOTHING_ALPHA = 0.3
     
     def __init__(self):
         super().__init__('yolo_bev_drivable_area_node')
