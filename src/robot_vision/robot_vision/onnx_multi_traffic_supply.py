@@ -5,16 +5,11 @@
 # REFINED BY: Hinton (for Robust State Integration & Logic Correction)
 # DESCRIPTION:
 # ... (설명 생략) ...
-# 11. [Hinton's Refinement] 'traffic_command' 발행 로직 수정.
-#     - 신호등이 감지되지 않을 때도 보급 상자 거리 조건이 독립적으로 작동하도록
-#       상태 결정 로직을 명시적으로 분리하여 강건성을 확보.
-# 12. [Hinton's Update] 'supply_command' 토픽 추가 및 로직 분리.
-#     - 보급 상자 거리 기반의 정지/진행 명령을 별도 토픽으로 분리.
-#     - 'traffic_command'는 신호등 상태에만 집중하도록 리팩토링하여 시스템 모듈성 강화.
-# 13. [Hinton's Refinement for Service-Topic Sync] 서비스-토픽 동기화 로직 적용.
-#     - PickPlace 서비스 호출과 supply_command 토픽 발행 로직을 동기화.
-#     - 서비스 호출 시 'stop'을 발행하고, 서비스 성공 콜백에서 'go'를 발행하여
-#       명령의 순서와 상태를 보장하는 강건한 프로토콜 구축.
+# 14. [Hinton's Update V2 for Stop Condition] 'supply_command' 발행 조건 변경.
+#     - 기존의 유클리드 거리(distance) 기반 정지 조건을
+#       카메라 기준 Z축 좌표(transformed_position[2]) 기반으로 변경.
+#     - z 값이 -0.1m ~ 0.4m 범위에 있을 때 'stop' 명령을 발행하도록 수정하여
+#       작업 거리를 더욱 정밀하게 제어.
 
 import rclpy
 from rclpy.node import Node
@@ -44,15 +39,11 @@ if (not hasattr(rs2, 'intrinsics')):
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node_no_qos_optimized')
-        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V3) ---")
+        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V4) ---")
         
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
         
-        # ### [Hinton's Refinement] supply_distance 관련 변수는 run_supply_tracking 내부에서 지역적으로 처리되므로 클래스 멤버 변수에서 제거합니다.
-        # self.supply_distance = -1.0
-        # self.supply_distance_lock = threading.Lock()
-
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use best provider.")
@@ -291,29 +282,19 @@ class YoloVisionNode(Node):
         finally:
             lock.release()
 
-    # ### [Hinton's Refinement for Service-Topic Sync] ###
-    # 서비스 응답 콜백 함수를 수정하여, 서비스 성공 시에만 'go' 명령을 발행하도록 합니다.
-    # 이는 차량의 행동(토픽)과 서비스의 결과(서비스)를 동기화하는 핵심 로직입니다.
     def pick_place_response_callback(self, future):
         try:
             response = future.result()
             if response.success:
                 self.get_logger().info(f"✅ PickPlace service successful: {response.message}. Publishing 'go'.")
-                # 서비스가 성공적으로 완료되었으므로, 'go' 명령을 발행하여 차량을 다시 출발시킵니다.
                 self.supply_pub.publish(String(data='go'))
             else:
                 self.get_logger().warn(f"⚠️ PickPlace service failed: {response.message}")
-                # [선택적 로직] 서비스 실패 시 'go'를 발행하여 무한정 대기하는 것을 방지할 수도 있습니다.
-                # self.supply_pub.publish(String(data='go'))
         except Exception as e:
             self.get_logger().error(f"Service call failed with exception: {e}")
         finally:
-            # 서비스 호출 상태를 '완료'로 변경하여 다음 감지를 허용합니다.
             self.service_call_in_progress = False
     
-    # ### [Hinton's Refinement for Service-Topic Sync] ###
-    # run_supply_tracking 함수의 로직을 상태 기반으로 재구성합니다.
-    # 'service_call_in_progress' 플래그를 사용하여 서비스 호출 중에는 새로운 명령을 내리지 않도록 제어합니다.
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image, header):
         if self.intrinsics is None: return False
         
@@ -321,7 +302,6 @@ class YoloVisionNode(Node):
         supply_found_this_frame = False
         transformed_position = None
 
-        # 가장 신뢰도 높은 보급상자 하나만 처리
         best_box = None
         max_conf = 0.0
         for box in results[0].boxes:
@@ -357,7 +337,6 @@ class YoloVisionNode(Node):
                         self.get_logger().warn(f"Coordinate transform failed: {e}", throttle_duration_sec=5.0)
                         return False
 
-                    # 시각화 정보 추가
                     label = f"x={transformed_position[0]:.2f}m, y={transformed_position[1]:.2f}m, z={transformed_position[2]:.2f}m"
                     scale_w = self.intrinsics.width / self.proc_width; scale_h = self.intrinsics.height / self.proc_height
                     orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
@@ -365,7 +344,6 @@ class YoloVisionNode(Node):
                     cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
                     cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-        # 상태 기반 명령 발행 로직
         if supply_found_this_frame and transformed_position is not None:
             if self.last_detected_position is not None and \
                np.linalg.norm(transformed_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
@@ -375,40 +353,38 @@ class YoloVisionNode(Node):
             self.last_detected_position = transformed_position
 
             if self.detection_counter >= self.DETECTION_THRESHOLD:
-                distance = np.linalg.norm(transformed_position)
                 
-                # 서비스 호출이 진행 중이 아닐 때만 거리 기반 판단을 수행합니다.
+                ### [Hinton's Update V2 for Stop Condition] ###
+                # 정지 조건을 거리(distance)에서 Z축 좌표로 변경합니다.
+                z_coord = transformed_position[2]
+                
+                # 서비스 호출이 진행 중이 아닐 때만 좌표 기반 판단을 수행합니다.
                 if not self.service_call_in_progress:
-                    # 1. '정지' 및 서비스 호출 조건: 목표 거리(0.4m ~ 0.6m) 내에 안정적으로 감지됨
-                    if 0.4 <= distance <= 0.6:
-                        self.get_logger().info(f"Target in range ({distance:.2f}m). Publishing 'stop' and calling PickPlace service.")
-                        # 'stop' 명령을 발행하여 차량을 정지시킵니다.
+                    # 1. '정지' 및 서비스 호출 조건: Z축 좌표가 목표 범위(-0.1m ~ 0.4m) 내에 안정적으로 감지됨
+                    if -0.1 <= z_coord <= 0.4:
+                        self.get_logger().info(f"Target in Z-range ({z_coord:.2f}m). Publishing 'stop' and calling PickPlace service.")
                         self.supply_pub.publish(String(data='stop'))
                         
-                        # 서비스 호출을 시작하고 상태를 '진행 중'으로 변경합니다.
                         self.service_call_in_progress = True
                         request = PickPlace.Request()
                         request.x, request.y, request.z = transformed_position.tolist()
                         future = self.pick_place_client.call_async(request)
                         future.add_done_callback(self.pick_place_response_callback)
                     
-                    # 2. '진행' 조건: 안정적으로 감지되었으나, 목표 거리 밖에 있음
+                    # 2. '진행' 조건: 안정적으로 감지되었으나, 목표 Z축 범위 밖에 있음
                     else:
-                        self.get_logger().debug(f"Target is stable but out of stop range ({distance:.2f}m). Publishing 'go'.")
+                        self.get_logger().debug(f"Target is stable but out of stop Z-range ({z_coord:.2f}m). Publishing 'go'.")
                         self.supply_pub.publish(String(data='go'))
-                # 서비스가 진행 중일 때는 현재 상태('stop')를 유지하므로 아무것도 발행하지 않습니다.
+                ### [Hinton's Update V2] END ###
+
             else:
                 self.get_logger().debug(f"Tracking target... continuity: {self.detection_counter}/{self.DETECTION_THRESHOLD}")
-                # 추적 중일 때도, 서비스가 호출되지 않은 상태라면 'go'를 발행하여 접근을 계속합니다.
                 if not self.service_call_in_progress:
                     self.supply_pub.publish(String(data='go'))
         else:
             self.detection_counter = 0
             self.last_detected_position = None
             
-            # 서비스 호출이 진행 중이 아닐 때만 'go'를 발행합니다.
-            # 이는 서비스 완료 후 보급 상자가 즉시 시야에서 사라진 경우,
-            # 'go'가 중복 발행되는 것을 방지하고 상태를 명확하게 유지합니다.
             if not self.service_call_in_progress:
                 self.supply_pub.publish(String(data='go'))
             
