@@ -1,13 +1,16 @@
 #!/usr/env/bin python3
 # -*- coding: utf-8 -*-
-# FILE: onnx_multi_traffic_no_qos_optimized.py
+# FILE: onnx_multi_traffic_supply.py
 # AUTHOR: Guido (Optimized for Real-time Distributed Systems)
-# REFINED BY: Hinton (for Robust State Integration)
+# REFINED BY: Hinton (for Robust State Integration & Logic Correction)
 # DESCRIPTION:
 # ... (설명 생략) ...
-# 9. [Hinton's Refinement] ROS 표준 좌표계 수동 변환 로직 제거, TF 시스템으로 변환 일원화.
-# 10. [Hinton's Refinement] Realsense와 USB Cam 스레드 간의 상태 공유를 위한 Thread-safe 변수 추가.
-#     - 보급 상자 거리(0.4m ~ 0.6m) 조건과 신호등 조건을 통합하여 'stop' 명령을 발행.
+# 11. [Hinton's Refinement] 'traffic_command' 발행 로직 수정.
+#     - 신호등이 감지되지 않을 때도 보급 상자 거리 조건이 독립적으로 작동하도록
+#       상태 결정 로직을 명시적으로 분리하여 강건성을 확보.
+# 12. [Hinton's Update] 'supply_command' 토픽 추가 및 로직 분리.
+#     - 보급 상자 거리 기반의 정지/진행 명령을 별도 토픽으로 분리.
+#     - 'traffic_command'는 신호등 상태에만 집중하도록 리팩토링하여 시스템 모듈성 강화.
 
 import rclpy
 from rclpy.node import Node
@@ -37,15 +40,13 @@ if (not hasattr(rs2, 'intrinsics')):
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node_no_qos_optimized')
-        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement) ---")
+        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V2) ---")
         
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
         
-        # ### [HINTON'S REFINEMENT] 스레드 간 상태 공유를 위한 변수 및 락 초기화 ###
-        self.supply_distance = -1.0  # 보급상자 거리 저장 (-1은 탐지되지 않음을 의미)
+        self.supply_distance = -1.0
         self.supply_distance_lock = threading.Lock()
-        # ### [HINTON'S REFINEMENT] END ###
 
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -119,6 +120,8 @@ class YoloVisionNode(Node):
         self.realsense_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/realsense/viz/compressed', 10)
         self.led_pub = self.create_publisher(String, '/led_control', 10)
         self.traffic_pub = self.create_publisher(String, '/traffic_command', 10)
+        # ### [Hinton's Update] 새로운 supply_command 토픽 퍼블리셔를 생성합니다.
+        self.supply_pub = self.create_publisher(String, '/supply_command', 10)
         self.usb_cam1_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam1/viz/compressed', 10)
         self.usb_cam2_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam2/viz/compressed', 10)
 
@@ -270,23 +273,23 @@ class YoloVisionNode(Node):
             if tracker['counter'] >= self.RED_LIGHT_CONFIRMATION_FRAMES:
                 red_found = True
 
-            # ### [HINTON'S REFINEMENT] 통합된 'stop' 조건 로직 ###
-            # 1. 스레드 락을 사용하여 안전하게 보급상자 거리 값을 읽어옵니다.
-            with self.supply_distance_lock:
-                current_supply_distance = self.supply_distance
+            # ### [Hinton's Update] 강건한 상태 결정 로직 (관심사 분리 적용) ###
+            # traffic_command는 오직 신호등 상태에만 집중합니다.
+            # 보급 상자 관련 로직은 run_supply_tracking 함수에서 supply_command로 발행됩니다.
+            command_to_publish = None
 
-            # 2. 보급상자가 정지해야 할 거리(0.4m ~ 0.6m) 내에 있는지 확인합니다.
-            supply_in_stop_range = (0.4 <= current_supply_distance <= 0.6)
-
-            # 3. 빨간불이 켜졌거나, 보급상자가 정지 범위 내에 있다면 "stop"을 발행합니다.
-            if red_found or supply_in_stop_range:
-                self.traffic_pub.publish(String(data="stop"))
-                # 어떤 조건 때문에 정지했는지 로그를 남겨 디버깅을 용이하게 합니다.
-                if supply_in_stop_range and not red_found:
-                    self.get_logger().info(f"Commanding STOP due to supply box at {current_supply_distance:.2f}m.", throttle_duration_sec=1)
+            # 1. '정지' 조건을 확인합니다. (빨간불)
+            if red_found:
+                command_to_publish = "stop"
+            
+            # 2. '진행' 조건을 확인합니다. (초록불)
             elif green_found: 
-                self.traffic_pub.publish(String(data="go"))
-            # ### [HINTON'S REFINEMENT] END ###
+                command_to_publish = "go"
+
+            # 3. 최종적으로 발행할 명령이 결정되었을 경우에만 토픽을 발행합니다.
+            if command_to_publish is not None:
+                self.traffic_pub.publish(String(data=command_to_publish))
+            # ### [Hinton's Update] END ###
             
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
 
@@ -313,7 +316,6 @@ class YoloVisionNode(Node):
         results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
         supply_found_this_frame = False
         
-        # 'transformed_position' 변수를 루프 외부에서 초기화
         transformed_position = None
 
         for box in results[0].boxes:
@@ -370,6 +372,7 @@ class YoloVisionNode(Node):
                         cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                         break
 
+        supply_cmd_msg = String() # ### [Hinton's Update]
         if supply_found_this_frame and transformed_position is not None:
             if self.last_detected_position is not None and \
             np.linalg.norm(transformed_position - self.last_detected_position) < self.TRACKING_TOLERANCE:
@@ -381,10 +384,17 @@ class YoloVisionNode(Node):
             if self.detection_counter >= self.DETECTION_THRESHOLD:
                 distance = np.linalg.norm(transformed_position)
                 
-                # ### [HINTON'S REFINEMENT] 스레드 공유 변수에 거리 값 업데이트 ###
                 with self.supply_distance_lock:
                     self.supply_distance = distance
-                # ### [HINTON'S REFINEMENT] END ###
+                
+                # ### [Hinton's Update] supply_command 발행 로직
+                # 요청하신 0.2m ~ 0.6m 범위에 따라 'stop' 또는 'go'를 발행합니다.
+                if 0.2 <= distance <= 0.6:
+                    supply_cmd_msg.data = 'stop'
+                else:
+                    supply_cmd_msg.data = 'go'
+                self.supply_pub.publish(supply_cmd_msg)
+                # ### [Hinton's Update] END
 
                 if self.MIN_DISTANCE <= distance <= self.MAX_DISTANCE and not self.service_call_in_progress:
                     self.service_call_in_progress = True
@@ -400,10 +410,13 @@ class YoloVisionNode(Node):
         else:
             self.detection_counter = 0
             self.last_detected_position = None
-            # ### [HINTON'S REFINEMENT] 타겟을 놓쳤을 때, 공유 변수 리셋 ###
             with self.supply_distance_lock:
-                self.supply_distance = -1.0 # 리셋
-            # ### [HINTON'S REFINEMENT] END ###
+                self.supply_distance = -1.0
+            
+            # ### [Hinton's Update] 보급 상자가 감지되지 않을 경우 'go'를 발행합니다.
+            supply_cmd_msg.data = 'go'
+            self.supply_pub.publish(supply_cmd_msg)
+            # ### [Hinton's Update] END
             
         return supply_found_this_frame
 
