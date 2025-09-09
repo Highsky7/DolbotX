@@ -10,6 +10,6 @@ ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-fil
 2번 터미널
 realros
 3번 터미널
-ros2 run robot_vision onnx_multi_traffic
+ros2 run robot_vision vision_nofilter
 4번 터미널
-ros2 run robot_vision onnx_path_planner_pp
+ros2 run robot_vision multi_area_planner
