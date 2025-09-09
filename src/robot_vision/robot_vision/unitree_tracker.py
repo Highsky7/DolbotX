@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: yolo_object_locator.py
+# FILE: unitree_tracker_tf.py
 # DESCRIPTION:
 # Intel RealSense D435i 카메라와 unitree_go2.onnx YOLO 모델을 사용하여
-# 객체를 탐지하고, 해당 객체의 카메라 기준 3D 좌표 (x, y)를 계산하여
-# ROS 2 토픽 '/target_xy'로 발행하는 노드입니다.
-# 제공된 onnx_multi_traffic_supply.py의 거리 계산 방식을 참고하여 작성되었습니다.
+# 객체를 탐지하고, 해당 객체의 3D 좌표를 계산합니다.
+# 계산된 좌표는 'camera_color_optical_frame'에서 'camera_bottom_screw_frame'으로
+# TF 변환된 후, ROS 2 토픽 '/target_xy'로 발행됩니다.
+# vision_nofilter.py의 TF 변환 방식을 적용하였습니다.
 
 import rclpy
 from rclpy.node import Node
@@ -19,8 +20,14 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
-from geometry_msgs.msg import Point # x, y 좌표 발행을 위한 메시지 타입
+from geometry_msgs.msg import Point, PointStamped # PointStamped 추가
 from cv_bridge import CvBridge
+
+# ## MODIFICATION START: TF2 관련 라이브러리 임포트 ##
+import tf2_ros
+from tf2_geometry_msgs import do_transform_point
+# ## MODIFICATION END ##
+
 
 # pyrealsense2 라이브러리 임포트
 import pyrealsense2 as rs2
@@ -29,8 +36,8 @@ if (not hasattr(rs2, 'intrinsics')):
 
 class YoloObjectLocatorNode(Node):
     def __init__(self):
-        super().__init__('yolo_object_locator_node')
-        self.get_logger().info("--- YOLO Object Locator Node for unitree_go2 ---")
+        super().__init__('yolo_object_locator_node_tf')
+        self.get_logger().info("--- YOLO Object Locator Node for unitree_go2 (with TF Transformation) ---")
 
         # 동시성 제어를 위한 Lock 객체
         self.processing_lock = threading.Lock()
@@ -54,6 +61,11 @@ class YoloObjectLocatorNode(Node):
         # 카메라 내부 파라미터(Intrinsics) 저장을 위한 변수
         self.intrinsics = None
         self.camera_info_sub = None
+        
+        # ## MODIFICATION START: TF 버퍼 및 리스너 초기화 ##
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        # ## MODIFICATION END ##
 
         # 처리 성능을 위한 이미지 크기 파라미터
         self.declare_parameter('proc_width', 640)
@@ -68,7 +80,6 @@ class YoloObjectLocatorNode(Node):
         # 시각화 이미지 발행을 위한 Publisher
         self.viz_pub = self.create_publisher(CompressedImage, '/yolo_locator/viz/compressed', 10)
 
-        # ⭐️ [수정된 부분 1] 변수 이름을 self.yolo_executor 로 변경
         self.yolo_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
 
@@ -139,7 +150,6 @@ class YoloObjectLocatorNode(Node):
         # 이전 프레임 처리가 아직 진행 중이면 현재 프레임은 건너뜁니다.
         if self.processing_lock.acquire(blocking=False):
             try:
-                # ⭐️ [수정된 부분 2] 변경된 이름으로 submit 호출
                 self.yolo_executor.submit(self._process_images, compressed_image_msg, depth_msg)
             except Exception as e:
                 self.get_logger().error(f"Failed to submit image processing task: {e}")
@@ -149,7 +159,7 @@ class YoloObjectLocatorNode(Node):
 
     def _process_images(self, compressed_image_msg, depth_msg):
         """
-        YOLO 추론과 좌표 계산을 수행하는 핵심 로직 (별도 스레드에서 실행됨)
+        YOLO 추론과 좌표 계산 및 TF 변환을 수행하는 핵심 로직 (별도 스레드에서 실행됨)
         """
         try:
             # 1. 이미지 디코딩 및 변환
@@ -180,51 +190,64 @@ class YoloObjectLocatorNode(Node):
 
             # 4. 객체가 검출된 경우 좌표 계산 및 발행
             if best_box is not None:
-                # 리사이즈된 이미지 기준의 바운딩 박스 좌표
                 x1, y1, x2, y2 = map(int, best_box.xyxy[0])
                 cx_res, cy_res = (x1 + x2) // 2, (y1 + y2) // 2
 
-                # 원본 이미지 크기에 대한 비율 계산
                 scale_w = self.intrinsics.width / self.proc_width
                 scale_h = self.intrinsics.height / self.proc_height
-
-                # 원본 이미지 기준의 픽셀 좌표
                 orig_cx = int(cx_res * scale_w)
                 orig_cy = int(cy_res * scale_h)
 
-                # 해당 픽셀의 깊이 값(mm 단위) 가져오기
                 if 0 <= orig_cy < self.intrinsics.height and 0 <= orig_cx < self.intrinsics.width:
                     depth_in_mm = cv_depth_raw[orig_cy, orig_cx]
                     
-                    # 깊이 값이 유효한 경우 (0보다 큼)
                     if depth_in_mm > 0:
-                        # 5. 2D 픽셀 좌표를 3D 공간 좌표로 변환 (Deprojection)
-                        # pyrealsense2의 deproject_pixel_to_point 함수 사용
-                        # 결과는 미터(m) 단위로 변환되어야 함
-                        coords_in_camera = rs2.rs2_deproject_pixel_to_point(
-                            self.intrinsics, [orig_cx, orig_cy], depth_in_mm
-                        )
+                        # 5. 2D 픽셀 좌표 -> 3D 공간 좌표 (카메라 광학 프레임 기준)
+                        deprojected = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [orig_cx, orig_cy], depth_in_mm)
+                        optical_frame_coords = np.array([p / 1000.0 for p in deprojected])
                         
-                        # mm 단위를 m 단위로 변환
-                        x_coord = coords_in_camera[0] / 1000.0
-                        y_coord = coords_in_camera[1] / 1000.0
-                        z_coord = coords_in_camera[2] / 1000.0
-
-                        # 6. /target_xy 토픽으로 Point 메시지 발행
-                        target_point_msg = Point()
-                        target_point_msg.x = x_coord
-                        target_point_msg.y = y_coord
-                        target_point_msg.z = z_coord # z 좌표도 함께 발행
-                        self.target_pub.publish(target_point_msg)
-
-                        # 7. 시각화: 바운딩 박스 및 좌표 정보 그리기
-                        orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
-                        orig_x2, orig_y2 = int(x2 * scale_w), int(y2 * scale_h)
+                        # ## MODIFICATION START: TF 변환 로직 ##
+                        point_in_optical_frame = PointStamped()
+                        point_in_optical_frame.header.frame_id = "camera_color_optical_frame"
+                        point_in_optical_frame.header.stamp = compressed_image_msg.header.stamp
+                        point_in_optical_frame.point.x, point_in_optical_frame.point.y, point_in_optical_frame.point.z = optical_frame_coords
                         
-                        label = f"Target: x={x_coord:.2f}, y={y_coord:.2f}, z={z_coord:.2f} m"
-                        cv2.rectangle(viz_image, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 0), 2)
-                        cv2.putText(viz_image, label, (orig_x1, orig_y1 - 10), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        target_frame = "camera_bottom_screw_frame"
+                        transformed_position = None
+                        
+                        try:
+                            transform = self.tf_buffer.lookup_transform(
+                                target_frame, 
+                                point_in_optical_frame.header.frame_id, 
+                                rclpy.time.Time()
+                            )
+                            point_in_target_frame = do_transform_point(point_in_optical_frame, transform)
+                            transformed_position = np.array([
+                                point_in_target_frame.point.x, 
+                                point_in_target_frame.point.y, 
+                                point_in_target_frame.point.z
+                            ])
+                        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+                            self.get_logger().warn(f"Coordinate transform failed: {e}", throttle_duration_sec=5.0)
+                            return # 변환 실패 시 함수 종료
+                        
+                        if transformed_position is not None:
+                            # 6. /target_xy 토픽으로 변환된 좌표(Point) 메시지 발행
+                            target_point_msg = Point()
+                            target_point_msg.x = transformed_position[0]
+                            target_point_msg.y = transformed_position[1]
+                            target_point_msg.z = transformed_position[2]
+                            self.target_pub.publish(target_point_msg)
+
+                            # 7. 시각화: 바운딩 박스 및 변환된 좌표 정보 그리기
+                            orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
+                            orig_x2, orig_y2 = int(x2 * scale_w), int(y2 * scale_h)
+                            
+                            label = f"Target(TF): x={transformed_position[0]:.2f}, y={transformed_position[1]:.2f}, z={transformed_position[2]:.2f} m"
+                            cv2.rectangle(viz_image, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 0), 2)
+                            cv2.putText(viz_image, label, (orig_x1, orig_y1 - 10), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        # ## MODIFICATION END ##
             
             # 시각화 이미지 발행
             self.publish_compressed_viz(viz_image)
@@ -253,7 +276,6 @@ class YoloObjectLocatorNode(Node):
         """
         self.get_logger().info("Shutting down the thread pool.")
         self._is_shutting_down = True
-        # ⭐️ [수정된 부분 3] 변경된 이름으로 shutdown 호출
         self.yolo_executor.shutdown(wait=True)
         super().destroy_node()
 
