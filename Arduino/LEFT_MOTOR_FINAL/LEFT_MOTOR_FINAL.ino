@@ -37,6 +37,16 @@ float integral1 = 0.0f, prevErr1 = 0.0f;
 volatile bool flag_Control = false;
 volatile bool velReceived = false; // 명령 수신 여부 플래그
 
+// ★ 추가: 워치독(명령 타임아웃) -----------------------
+unsigned long lastCmdMs = 0;      // 마지막 유효 명령 수신 시각(ms)
+const unsigned long CMD_TIMEOUT_MS = 300;  // 타임아웃 임계값
+// ----------------------------------------------------
+
+// ★ 추가: RPM 저역통과(EMA) ---------------------------
+double wheelRPM_L_filt = 0.0;
+const double RPM_ALPHA = 0.3; // 0~1, 클수록 빠른 추종(노이즈 커짐)
+// ----------------------------------------------------
+
 // 논블로킹 시리얼 수신을 위한 버퍼
 const int SERIAL_BUFFER_SIZE = 64;
 char serialBuffer[SERIAL_BUFFER_SIZE];
@@ -66,16 +76,16 @@ void parseSerial() {
         vel_left_Sub = atof(serialBuffer + 2);
         velReceived = true; // 유효한 명령 수신 완료
 
-        /* === 수정된 부분 START === */
+        // ★ 추가: 워치독용 마지막 수신 시각 갱신
+        lastCmdMs = millis();
+
         // 새로운 명령을 받으면 PID 상태를 리셋하여 Integral Windup 방지
         integral1 = 0.0f;
         prevErr1 = 0.0f;
-        /* === 수정된 부분 END === */
       }
-      
+
       bufferIndex = 0; // 버퍼 초기화
-    } 
-    else {
+    } else {
       if (bufferIndex < SERIAL_BUFFER_SIZE - 1) {
         serialBuffer[bufferIndex++] = incomingChar;
       } else {
@@ -114,17 +124,17 @@ void setup() {
   pinMode(M3_PWM, OUTPUT); pinMode(M3_DIR, OUTPUT);
   pinMode(start_pin1, OUTPUT); pinMode(start_pin2, OUTPUT);
   pinMode(start_pin3, OUTPUT);
-  
+
   attachInterrupt(digitalPinToInterrupt(M1_ENC_A), ISR_Left, RISING);
-  
+
   // 모든 드라이버 활성화
-  digitalWrite(start_pin1, HIGH); 
+  digitalWrite(start_pin1, HIGH);
   digitalWrite(start_pin2, HIGH);
   digitalWrite(start_pin3, HIGH);
 
   // 시작 전 모터 정지
   driveMotor(M1_PWM, M1_DIR, 0);
-  
+
   MsTimer2::set(CONTROL_MS, onTimer);
   MsTimer2::start();
 }
@@ -133,14 +143,14 @@ void loop() {
   // 시리얼 포트에서 들어오는 명령을 계속 확인
   parseSerial();
 
-  // 유효한 속도 명령을 받기 전까지는 모터를 정지
-  if (!velReceived) {
-    driveMotor(M1_PWM, M1_DIR, 0); 
+  // ★ 추가: 워치독(타임아웃) — 유효 명령 전/타임아웃 시 정지
+  if (!velReceived || (millis() - lastCmdMs) > CMD_TIMEOUT_MS) {
+    driveMotor(M1_PWM, M1_DIR, 0);
     driveMotor(M2_PWM, M2_DIR, 0);
-    driveMotor(M3_PWM, M3_DIR, 0); 
+    driveMotor(M3_PWM, M3_DIR, 0);
     return;
   }
-  
+
   // 타이머 주기에 맞춰 제어 루프 실행
   if (!flag_Control) return;
   flag_Control = false;
@@ -157,23 +167,24 @@ void loop() {
 
   // 엔코더 펄스 값을 모터 RPM으로 변환
   double motorRPM_L = (cntL / (double)PULSES_PER_REV) * (60.0 / dt_s);
-  
+
   // 모터 RPM을 바퀴 RPM으로 변환
   double wheelRPM_L = motorRPM_L * GEAR_RATIO;
 
   // 현재 실제 속도(m/s) 계산 (디버깅용)
   double actual_vel_left = wheelRPM_L * WHEEL_CIRC / 60.0;
-  
-  // PID 제어값 계산
-  double cmdL = PID(targetRPM_L, wheelRPM_L, integral1, prevErr1);
+
+  // ★ 추가: RPM 저역통과(EMA) 적용 후 PID 입력으로 사용
+  wheelRPM_L_filt = RPM_ALPHA * wheelRPM_L + (1.0 - RPM_ALPHA) * wheelRPM_L_filt;
+
+  // PID 제어값 계산 (필터된 RPM 사용)
+  double cmdL = PID(targetRPM_L, wheelRPM_L_filt, integral1, prevErr1);
 
   // 목표 속도가 매우 낮을 경우 모터 정지 (Deadzone)
   if (fabs(vel_left_Sub) <= 0.05) {
     cmdL = 0;
-    /* === 수정된 부분 START === */
     // 정지 명령 시 적분항을 리셋하여 다음 출발 시 오버슈팅 방지
     integral1 = 0.0f;
-    /* === 수정된 부분 END === */
   }
 
   // PWM 출력값 제한
@@ -185,7 +196,8 @@ void loop() {
   driveMotor(M3_PWM, M3_DIR, -cmdL);
 
   // === 디버깅을 위한 시리얼 플로터 출력 ===
-  // Serial.print(vel_left_Sub); // 목표 속도
-  // Serial.print(" ");
-  // Serial.println(actual_vel_left); // 실제 속도
+  // Serial.print(vel_left_Sub); Serial.print(" ");
+  // Serial.print(actual_vel_left); Serial.print(" ");
+  // Serial.println(cmdL);
 }
+

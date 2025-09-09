@@ -39,6 +39,14 @@ float integral_R = 0.0f, prevErr_R = 0.0f;
 volatile bool flag_Control = false;
 volatile bool velReceived = false; // 명령 수신 여부 플래그
 
+// ★ 추가: 워치독(명령 타임아웃)
+unsigned long lastCmdMs = 0;                  // 마지막 유효 명령 수신 시각(ms)
+const unsigned long CMD_TIMEOUT_MS = 300;     // 타임아웃 임계값
+
+// ★ 추가: RPM 저역통과(EMA)
+double wheelRPM_R_filt = 0.0;
+const double RPM_ALPHA = 0.3;                 // 0~1, 클수록 빠른 추종(노이즈↑)
+
 // 논블로킹 시리얼 수신을 위한 버퍼
 const int SERIAL_BUFFER_SIZE = 64;
 char serialBuffer[SERIAL_BUFFER_SIZE];
@@ -68,13 +76,12 @@ void parseSerial() {
         vel_right_Sub = atof(serialBuffer + 2);
         velReceived = true; // 유효한 명령 수신 완료
 
-        /* === 수정된 부분 START === */
-        // 새로운 명령을 받으면 PID 상태를 리셋하여 Integral Windup 방지
+        // ★ 추가: 워치독 갱신 + PID 상태 리셋
+        lastCmdMs = millis();
         integral_R = 0.0f;
         prevErr_R = 0.0f;
-        /* === 수정된 부분 END === */
       }
-      
+
       bufferIndex = 0; // 버퍼 초기화
     } 
     else {
@@ -137,8 +144,8 @@ void loop() {
   // 시리얼 포트에서 들어오는 명령을 계속 확인
   parseSerial();
 
-  // 유효한 속도 명령을 받기 전까지는 모터를 정지
-  if (!velReceived) {
+  // ★ 추가: 워치독(타임아웃) — 유효 명령 전/타임아웃 시 정지
+  if (!velReceived || (millis() - lastCmdMs) > CMD_TIMEOUT_MS) {
     driveMotor(M4_PWM, M4_DIR, 0);
     driveMotor(M5_PWM, M5_DIR, 0);
     driveMotor(M6_PWM, M6_DIR, 0);
@@ -168,16 +175,17 @@ void loop() {
   // 현재 실제 속도(m/s) 계산 (디버깅용)
   double actual_vel_right = wheelRPM_R * WHEEL_CIRC / 60.0;
 
-  // PID 제어값 계산
-  double cmdR = PID(targetRPM_R, wheelRPM_R, integral_R, prevErr_R, KP, KI, KD);
+  // ★ 추가: RPM 저역통과(EMA) 적용 후 PID 입력으로 사용
+  wheelRPM_R_filt = RPM_ALPHA * wheelRPM_R + (1.0 - RPM_ALPHA) * wheelRPM_R_filt;
+
+  // PID 제어값 계산 (필터된 RPM 사용)
+  double cmdR = PID(targetRPM_R, wheelRPM_R_filt, integral_R, prevErr_R, KP, KI, KD);
 
   // 목표 속도가 매우 낮을 경우 모터 정지 (Deadzone)
   if (fabs(vel_right_Sub) <= 0.05) {
     cmdR = 0;
-    /* === 수정된 부분 START === */
     // 정지 명령 시 적분항을 리셋하여 다음 출발 시 오버슈팅 방지
     integral_R = 0.0f;
-    /* === 수정된 부분 END === */
   }
 
   // PWM 출력값 제한
@@ -189,7 +197,8 @@ void loop() {
   driveMotor(M6_PWM, M6_DIR, -cmdR);
 
   // === 디버깅을 위한 시리얼 플로터 출력 ===
-  // Serial.print(vel_right_Sub); // 우측 목표 속도
-  // Serial.print(" ");
-  // Serial.println(actual_vel_right); // 우측 실제 속도
+  // Serial.print(vel_right_Sub); Serial.print(" ");       // 우측 목표 속도
+  // Serial.print(actual_vel_right); Serial.print(" ");     // 우측 실제 속도(m/s)
+  // Serial.println(cmdR);                                  // 제어 출력(PWM 근사)
 }
+

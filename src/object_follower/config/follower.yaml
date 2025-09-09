@@ -1,0 +1,26 @@
+object_follower:
+  ros__parameters:
+    target_xy_topic: "/target_xy"
+    left_topic: "/cmd_vel_left"
+    right_topic: "/cmd_vel_right"
+
+    wheelbase: 0.60
+    k_heading: 1.0
+    k_dist: 0.8
+    follow_distance: 1.0
+    reverse_ok: false
+    control_hz: 50.0
+
+    v_cruise: 0.6
+    v_max_hw: 0.6
+    wheel_speed_max: 0.6     # ← 최종 좌/우 바퀴 속도 절대 상한
+
+    turn_ang_straight: 0.05
+    turn_ang_full: 0.6
+    turn_scale_min: 0.35
+
+    apply_camera_offset: true
+    camera_offset_x: 0.27
+    camera_offset_y: 0.0
+
+    lost_timeout: 0.5
