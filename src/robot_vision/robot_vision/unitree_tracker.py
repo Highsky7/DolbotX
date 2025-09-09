@@ -68,8 +68,8 @@ class YoloObjectLocatorNode(Node):
         # 시각화 이미지 발행을 위한 Publisher
         self.viz_pub = self.create_publisher(CompressedImage, '/yolo_locator/viz/compressed', 10)
 
-        # 병렬 처리를 위한 ThreadPoolExecutor
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo_worker')
+        # ⭐️ [수정된 부분 1] 변수 이름을 self.yolo_executor 로 변경
+        self.yolo_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
 
         # RealSense 카메라 정보 토픽 구독
@@ -139,8 +139,8 @@ class YoloObjectLocatorNode(Node):
         # 이전 프레임 처리가 아직 진행 중이면 현재 프레임은 건너뜁니다.
         if self.processing_lock.acquire(blocking=False):
             try:
-                # 무거운 작업을 별도 스레드에서 처리하도록 제출
-                self.executor.submit(self._process_images, compressed_image_msg, depth_msg)
+                # ⭐️ [수정된 부분 2] 변경된 이름으로 submit 호출
+                self.yolo_executor.submit(self._process_images, compressed_image_msg, depth_msg)
             except Exception as e:
                 self.get_logger().error(f"Failed to submit image processing task: {e}")
                 self.processing_lock.release()
@@ -221,7 +221,7 @@ class YoloObjectLocatorNode(Node):
                         orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
                         orig_x2, orig_y2 = int(x2 * scale_w), int(y2 * scale_h)
                         
-                        label = f"x={x_coord:.2f}, y={y_coord:.2f}, z={z_coord:.2f} m"
+                        label = f"Target: x={x_coord:.2f}, y={y_coord:.2f}, z={z_coord:.2f} m"
                         cv2.rectangle(viz_image, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 0), 2)
                         cv2.putText(viz_image, label, (orig_x1, orig_y1 - 10), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -253,7 +253,8 @@ class YoloObjectLocatorNode(Node):
         """
         self.get_logger().info("Shutting down the thread pool.")
         self._is_shutting_down = True
-        self.executor.shutdown(wait=True)
+        # ⭐️ [수정된 부분 3] 변경된 이름으로 shutdown 호출
+        self.yolo_executor.shutdown(wait=True)
         super().destroy_node()
 
 def main(args=None):
