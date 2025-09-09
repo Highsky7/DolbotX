@@ -13,6 +13,7 @@
 # 7. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
 # 8. [핵심 개선] '신뢰도 기반 동적 스무딩' 적용: 경로 포인트 수에 따라 스무딩 강도를 자동 조절하여 극한의 안정성 확보
 # 9. [융합 아키텍처] 2개의 ONNX 모델(Drivable Area, Sand) 추론 결과를 실시간으로 융합하여 통합 경로 생성
+# 10. [안정성 강화] 주행 영역 미검출 시 조향각 0을 발행하여 Fail-Safe 동작 보장
 
 import rclpy
 from rclpy.node import Node
@@ -199,14 +200,24 @@ class YoloBevFusedDrivableAreaNode(Node):
             filtered_mask = self.filter_drivable_mask(unified_mask)
             steering_angle_rad, viz_data = self.calculate_steering_from_area(filtered_mask)
             
-            final_viz_angle = 0.0
+            # ================================================================= #
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [Hinton's Fail-Safe Steering Logic] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
+            # 주행 가능 영역이 감지되었을 때는 계산된 조향각을,
+            # 감지되지 않았을 경우(steering_angle_rad is None)에는 안전을 위해
+            # 조향각 0 (직진)을 명시적으로 발행합니다.
+            # 이는 시스템이 예측 불가능한 상태에 빠지는 것을 방지하고 안정성을 확보하는 핵심 로직입니다.
+            steer_msg = Float64()
             if steering_angle_rad is not None:
-                final_viz_angle = steering_angle_rad
-                steer_msg = Float64()
-                steer_msg.data = final_viz_angle
-                self.steer_pub.publish(steer_msg)
+                steer_msg.data = steering_angle_rad
+            else:
+                steer_msg.data = 0.0
+            self.steer_pub.publish(steer_msg)
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [Hinton's Fail-Safe Steering Logic] ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
+            # ================================================================= #
             
             if self.viz_pub.get_subscription_count() > 0:
+                # 시각화를 위해 steering_angle_rad가 None일 경우 0.0으로 처리
+                final_viz_angle = steering_angle_rad if steering_angle_rad is not None else 0.0
                 self.publish_visualization(bev_image, filtered_mask, viz_data, final_viz_angle)
 
         except Exception:
