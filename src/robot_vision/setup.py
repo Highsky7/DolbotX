@@ -26,7 +26,7 @@ setup(
             'multi_area_planner = robot_vision.multi_area_planner:main',
             'onnx_dynamic_EMA_path_planner_pp = robot_vision.onnx_dynamic_EMA_path_planning_pp:main',
             'onnx_multi_traffic_supply = robot_vision.onnx_multi_traffic_supply:main',
-            'vision_no_filter = robot_vision.vision_no_filter:main',
+            'vision_nofilter = robot_vision.vision_nofilter:main',
             'bev_utilis_auto = robot_vision.utils.bev_utils_y_auto:main',
             'bev_utilis = robot_vision.utils.bev_utils:main',
             'hsv_picker = robot_vision.utils.hsv_picker:main',

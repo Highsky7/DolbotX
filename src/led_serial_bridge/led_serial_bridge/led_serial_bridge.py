@@ -26,7 +26,7 @@ class LedSerialBridge(Node):
         super().__init__('led_serial_bridge')
 
         # ---------- Parameters ----------
-        self.declare_parameter('port', '/dev/ttyACM0')
+        self.declare_parameter('port', '/dev/LED')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('reopen_interval_ms', 1000)
         self.declare_parameter('debug_tx', False)

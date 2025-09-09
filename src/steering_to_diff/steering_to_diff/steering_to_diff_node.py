@@ -47,7 +47,7 @@ class SteeringToDiff(Node):
         # 데드존/필터
         self.declare_parameter('v_deadzone', 1e-3)             # [m/s]
         self.declare_parameter('ang_deadzone', 1e-4)           # [rad]
-        self.declare_parameter('cmd_vel_deadzone', 0.28)        # [m/s] 최종 출력 데드존 (추가됨)
+        self.declare_parameter('cmd_vel_deadzone', 0.25)        # [m/s] 최종 출력 데드존 (추가됨)
         self.declare_parameter('enable_filters', False)
         self.declare_parameter('angle_alpha', 0.2)
         self.declare_parameter('speed_alpha', 0.2)
