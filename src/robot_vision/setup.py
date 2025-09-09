@@ -34,6 +34,7 @@ setup(
             'recorder = robot_vision.utils.recorder:main',
             'fire_detect = robot_vision.fire_detector:main',
             'pick_place_server = robot_vision.pick_place_server:main',
+            'unitree_tracker = robot_vision.unitree_tracker:main',
         ],
     },
 )
