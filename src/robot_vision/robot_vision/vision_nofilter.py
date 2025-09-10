@@ -62,7 +62,7 @@ class YoloVisionNode(Node):
         self.declare_parameter('red_light_min_area', 100)
         self.declare_parameter('traffic_roi_top_ratio', 0.6)
         self.declare_parameter('red_light_confirmation_frames', 3)
-        self.declare_parameter('red_light_tracking_tolerance', 50) 
+        self.declare_parameter('red_light_tracking_tolerance', 50)
         self.RED_LIGHT_MIN_AREA = self.get_parameter('red_light_min_area').get_parameter_value().integer_value
         self.TRAFFIC_ROI_TOP_RATIO = self.get_parameter('traffic_roi_top_ratio').get_parameter_value().double_value
         self.RED_LIGHT_CONFIRMATION_FRAMES = self.get_parameter('red_light_confirmation_frames').get_parameter_value().integer_value
@@ -79,9 +79,9 @@ class YoloVisionNode(Node):
         self.proc_height = self.get_parameter('proc_height').get_parameter_value().integer_value
 
         try:
-            self.declare_parameter('supply_model_path', './tracking.onnx')
+            self.declare_parameter('supply_model_path', './tracking2.onnx')
             self.declare_parameter('marker_model_path', './vision_enemy3.onnx')
-            self.declare_parameter('traffic_model_path', './traffic_light.onnx')
+            self.declare_parameter('traffic_model_path', './traffic_robo.onnx')
             supply_model_path = self.get_parameter('supply_model_path').get_parameter_value().string_value
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
             traffic_model_path = self.get_parameter('traffic_model_path').get_parameter_value().string_value
