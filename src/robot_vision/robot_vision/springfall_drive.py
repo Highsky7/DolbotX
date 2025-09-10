@@ -12,6 +12,7 @@
 # 6. Pure Pursuit 알고리즘 안정성 강화: 경로가 짧을 경우 마지막 점을 목표점으로 지정
 # 7. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
 # 8. [핵심 개선] '신뢰도 기반 동적 스무딩' 적용: 경로 포인트 수에 따라 스무딩 강도를 자동 조절하여 극한의 안정성 확보
+# 9. [Fail-Safe] 주행 영역 미감지 시 조향각 0도를 발행하여 안정성 확보
 
 import rclpy
 from rclpy.node import Node
@@ -182,12 +183,23 @@ class YoloBevDrivableAreaNode(Node):
             filtered_mask = self.filter_drivable_mask(combined_mask)
             steering_angle_rad, viz_data = self.calculate_steering_from_area(filtered_mask)
             
+            # ================================================================= #
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [수정된 부분] Fail-Safe 로직 추가 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
             final_viz_angle = 0.0
+            steer_msg = Float64()
+
             if steering_angle_rad is not None:
+                # 경로가 정상적으로 계산된 경우, 해당 조향각을 발행
                 final_viz_angle = steering_angle_rad
-                steer_msg = Float64()
                 steer_msg.data = final_viz_angle
                 self.steer_pub.publish(steer_msg)
+            else:
+                # 경로 계산에 실패한 경우(주행 가능 영역 없음), 안전을 위해 0도 발행
+                self.get_logger().warn("No path calculated. Publishing 0.0 steering angle (fail-safe).", throttle_duration_sec=2)
+                steer_msg.data = 0.0
+                self.steer_pub.publish(steer_msg)
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [수정된 부분] Fail-Safe 로직 추가 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
+            # ================================================================= #
             
             if self.viz_pub.get_subscription_count() > 0:
                 self.publish_visualization(bev_image, filtered_mask, viz_data, final_viz_angle)
