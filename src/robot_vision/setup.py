@@ -22,9 +22,9 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'winter_drive = robot_vision.winter_drive:main',
             'springfall_drive = robot_vision.springfall_drive:main',
             'summer_drive = robot_vision.summer_drive:main',
+            'winter_drive = robot_vision.winter_drive:main',
             'unitree_tracker = robot_vision.unitree_tracker:main',
             'onnx_multi_traffic_supply = robot_vision.onnx_multi_traffic_supply:main',
             'vision_nofilter = robot_vision.vision_nofilter:main',
