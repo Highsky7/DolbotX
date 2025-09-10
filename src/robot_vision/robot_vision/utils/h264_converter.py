@@ -17,7 +17,6 @@ from pathlib import Path
 def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_original):
     """
     지정된 디렉토리의 비디오 파일들을 FFmpeg를 사용하여 H.264로 변환합니다.
-    (이 함수의 내용은 이전 버전과 동일합니다)
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
@@ -39,16 +38,25 @@ def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_ori
 
         print(f"▶️ Converting '{filename}'...")
 
+        # --- 이 부분이 수정되었습니다 ---
+        # 기본 명령어를 구성합니다.
         command = [
             'ffmpeg', '-y', '-i', input_path,
-            '-c:v', codec, '-preset', preset,
-            '-c:a', 'copy', output_path
+            '-c:v', codec
         ]
         
-        # libx264 (CPU) 코덱인 경우에만 CRF 옵션 추가
+        # libx264 (CPU) 코덱인 경우에만 CRF 옵션을 추가합니다.
+        # 옵션과 값을 함께 extend로 추가하여 순서가 꼬이지 않도록 합니다.
         if codec == 'libx264':
-            command.insert(7, '-crf')
-            command.insert(8, str(crf))
+            command.extend(['-crf', str(crf)])
+
+        # 나머지 옵션과 출력 경로를 추가합니다.
+        command.extend([
+            '-preset', preset,
+            '-c:a', 'copy', 
+            output_path
+        ])
+        # --- 수정 끝 ---
 
         try:
             result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -67,15 +75,12 @@ def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_ori
             return
 
 def main():
-    # --- 이 부분이 수정되었습니다 ---
+    # --- 이 부분은 수정되지 않았습니다 ---
     parser = argparse.ArgumentParser(
         description="Convert videos to H.264. Defaults to converting '~/ros2_recordings/unified'.",
-        formatter_class=argparse.RawTextHelpFormatter # 도움말 줄바꿈을 예쁘게 표시
+        formatter_class=argparse.RawTextHelpFormatter
     )
     
-    # 입력 디렉토리를 위치 인자(positional argument)이면서 동시에 기본값을 갖도록 설정
-    # nargs='?': 인자가 없을 수도 있음을 의미
-    # os.path.expanduser: '~'를 사용자의 홈 디렉토리로 변환
     default_input_path = os.path.expanduser('~/ros2_recordings/unified')
     parser.add_argument(
         "input_dir", 
@@ -91,9 +96,8 @@ def main():
     
     args = parser.parse_args()
     
-    # 입력 디렉토리를 기반으로 출력 디렉토리 자동 설정
     input_path = args.input_dir
-    output_path = f"{os.path.normpath(input_path)}_h264" # 입력 경로 끝에 슬래시가 있어도 처리
+    output_path = f"{os.path.normpath(input_path)}_h264"
     
     if not os.path.isdir(input_path):
         print(f"❌ FATAL ERROR: The specified input directory does not exist: {input_path}")
