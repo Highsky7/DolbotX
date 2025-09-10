@@ -22,9 +22,10 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'onnx_path_planner_pp = robot_vision.onnx_path_planning_pp:main',
-            'multi_area_planner = robot_vision.multi_area_planner:main',
-            'onnx_dynamic_EMA_path_planner_pp = robot_vision.onnx_dynamic_EMA_path_planning_pp:main',
+            'winter_drive = robot_vision.winter_drive:main',
+            'springfall_drive = robot_vision.springfall_drive:main',
+            'summer_drive = robot_vision.summer_drive:main',
+            'unitree_tracker = robot_vision.unitree_tracker:main',
             'onnx_multi_traffic_supply = robot_vision.onnx_multi_traffic_supply:main',
             'vision_nofilter = robot_vision.vision_nofilter:main',
             'bev_utilis_auto = robot_vision.utils.bev_utils_y_auto:main',
@@ -34,7 +35,6 @@ setup(
             'recorder = robot_vision.utils.recorder:main',
             'fire_detect = robot_vision.fire_detector:main',
             'pick_place_server = robot_vision.pick_place_server:main',
-            'unitree_tracker = robot_vision.unitree_tracker:main',
         ],
     },
 )
