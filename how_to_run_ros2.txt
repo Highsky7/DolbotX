@@ -1,4 +1,3 @@
-
 1번터미널
 sudo udevadm trigger
 -> 1-1터미널(Driving Camera-logitech):
@@ -18,3 +17,5 @@ ros2 run robot_vision springfall_drive
 ros2 run robot_vision winter_drive
 3 onnx ver:
 ros2 run robot_vision summer_drive
+unitree ver:
+ros2 run robot_vision unitree_tracker
