@@ -5,13 +5,13 @@ object_follower:
     right_topic: "/cmd_vel_right"
 
     wheelbase: 0.60
-    k_heading: 1.0
-    k_dist: 0.8
-    follow_distance: 1.0
+    k_heading: 1.5
+    k_dist: 1.5
+    follow_distance: 0.3
     reverse_ok: false
-    control_hz: 50.0
+    control_hz: 30.0
 
-    v_cruise: 0.6
+    v_cruise: 0.5
     v_max_hw: 0.6
     wheel_speed_max: 0.6     # ← 최종 좌/우 바퀴 속도 절대 상한
 

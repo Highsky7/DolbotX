@@ -46,9 +46,9 @@ class ObjectFollower(Node):
 
         # ===== 기구/제어 =====
         self.declare_parameter('wheelbase', 0.60)        # [m]
-        self.declare_parameter('k_heading', 1.0)         # [rad/rad]
-        self.declare_parameter('k_dist', 0.8)            # [m/s per m]
-        self.declare_parameter('follow_distance', 1.0)   # [m]
+        self.declare_parameter('k_heading', 1.5)         # [rad/rad]
+        self.declare_parameter('k_dist', 1.5)            # [m/s per m]
+        self.declare_parameter('follow_distance', 0.3)   # [m]
         self.declare_parameter('reverse_ok', False)      # 후진 허용 여부
 
         # ===== 속도 정책(중요) =====
