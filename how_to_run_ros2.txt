@@ -1,16 +1,16 @@
-1번터미널
+1번터미널(jetson, 웹캠 실행 노드)
 sudo udevadm trigger
--> 1-1터미널(Driving Camera-logitech):
+-> 1-1터미널(Driving Camera-logitech, jetson):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
--> 1-2터미널(Left Camera-abko):
+-> 1-2터미널(Left Camera-abko, jetson):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
--> 1-3터미널(Right Camera-topsync):
+-> 1-3터미널(Right Camera-topsync, jetson):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
-2번 터미널
+2번 터미널(jetson, 뎁스 카메라 노드)
 realros
-3번 터미널
+3번 터미널(lake, vision인식 노드)
 ros2 run robot_vision vision_nofilter
-4번 터미널
+4번 터미널(lake, 주행 가능 영역 인식 노드)
 1 onnx ver:
 ros2 run robot_vision springfall_drive
 2 onnx ver:
@@ -19,3 +19,20 @@ ros2 run robot_vision winter_drive
 ros2 run robot_vision summer_drive
 unitree ver:
 ros2 run robot_vision unitree_tracker
+5번 터미널(lake, 조작코드)
+cd ws_moveit
+ros2 launch moveit_servo arm_servo.launch.py
+6-1 터미널(jetson, manual 구동)
+cd DolbotX_control
+si
+ros2 launch steering_to_diff stering_to_diff.launch.py
+6-2 터미널(jetson, self drive 구동)
+cd DolbotX_control
+si
+ros2 launch wheel_serial_bridge bridge.launch.py
+7 터미널(lake, led점등)
+cd DolbotX
+ros2 run led_serial_bridge led_serial_bridge
+8 터미널(lake, 추종 코드)
+cd DolbotX
+ros2 launch object_follower object_follower.launch.py
