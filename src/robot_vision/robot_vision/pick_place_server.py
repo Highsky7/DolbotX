@@ -10,7 +10,7 @@ class PickPlaceServerNode(Node):
         # 클라이언트가 요청하면 self.pick_place_callback 함수가 실행됩니다.
         self.srv = self.create_service(
             PickPlace, 
-            'pick_place', 
+            'pick_place_service', 
             self.pick_place_callback)
         self.get_logger().info('✅ Pick and Place service server is ready.')
 
