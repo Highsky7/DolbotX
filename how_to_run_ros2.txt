@@ -12,4 +12,9 @@ realros
 3번 터미널
 ros2 run robot_vision vision_nofilter
 4번 터미널
-ros2 run robot_vision multi_area_planner
+1 onnx ver:
+ros2 run robot_vision springfall_drive
+2 onnx ver:
+ros2 run robot_vision winter_drive
+3 onnx ver:
+ros2 run robot_vision summer_drive
