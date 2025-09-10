@@ -31,6 +31,7 @@ setup(
             'bev_utilis_auto = robot_vision.utils.bev_utils_y_auto:main',
             'bev_utilis = robot_vision.utils.bev_utils:main',
             'hsv_picker = robot_vision.utils.hsv_picker:main',
+            'unified_recorder = robot_vision.utils.unified_recorder:main',
             'bev_recorder = robot_vision.utils.bev_recorder:main',
             'realsense_recorder = robot_vision.utils.realsense_recorder:main',
             'camera1_recorder = robot_vision.utils.camera1_recorder:main'
