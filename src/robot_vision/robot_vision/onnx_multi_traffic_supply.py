@@ -103,7 +103,7 @@ class YoloVisionNode(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        self.pick_place_client = self.create_client(PickPlace, 'pick_place')
+        self.pick_place_client = self.create_client(PickPlace, '/pick_place_service')
         while not self.pick_place_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('pick_place service not available, waiting...')
         self.service_call_in_progress = False
