@@ -42,7 +42,7 @@ class ObjectFollower(Node):
         # ===== 입력 좌표계 플래그 =====
         # True  → 입력이 RealSense optical (x:우, y:아래, z:전)
         # False → 입력이 이미 추종 프레임 (x:전방, y:좌)
-        self.declare_parameter('input_is_optical', True)
+        self.declare_parameter('input_is_optical', False)
 
         # ===== 기구/제어 =====
         self.declare_parameter('wheelbase', 0.60)        # [m]
