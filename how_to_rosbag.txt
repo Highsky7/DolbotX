@@ -1,3 +1,4 @@
+ros2 bag record 방법:
 ros2 bag record \
 /camera3/image_raw/compressed \
 /camera/color/camera_info \
@@ -10,4 +11,6 @@ ros2 bag record \
 -o my_robot_run_$(date +%Y-%m-%d-%H-%M-%S) \
 -s mcap \
 --compression-mode file \
---compression-format zstd \
+--compression-format zstd
+ros2 bag play 방법:
+ros2 bag play my_robot_run_$(date +%Y-%m-%d-%H-%M-%S)
