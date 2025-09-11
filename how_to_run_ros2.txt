@@ -1,10 +1,10 @@
 1번터미널(jetson, 웹캠 실행 노드)
 sudo udevadm trigger
--> 1-1터미널(Driving Camera-logitech, jetson):
+-> 1-1터미널( jetson, Driving Camera-logitech):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
--> 1-2터미널(Left Camera-abko, jetson):
+-> 1-2터미널(jetson, Left Camera-abko):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
--> 1-3터미널(Right Camera-topsync, jetson):
+-> 1-3터미널(jetson, Right Camera-topsync):
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
 2번 터미널(jetson, 뎁스 카메라 노드)
 realros
