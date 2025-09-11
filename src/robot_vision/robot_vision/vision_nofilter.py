@@ -67,11 +67,11 @@ class YoloVisionNode(Node):
             self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
         # ## HINTON'S MODIFICATION START: State Machine Parameters for Traffic Light ##
-        self.declare_parameter('red_light_min_area', 10000)
-        self.declare_parameter('traffic_roi_top_ratio', 0.4)
-        self.declare_parameter('red_light_confirmation_frames', 5) # N 값: RED 상태 확신 프레임
+        self.declare_parameter('red_light_min_area', 10000) # 최소 탐지 영역 (픽셀 단위)
+        self.declare_parameter('traffic_roi_top_ratio', 0.4) # 신호등 ROI 상단 비율 (0~1)
+        self.declare_parameter('red_light_confirmation_frames', 3) # N 값: RED 상태 확신 프레임
         self.declare_parameter('red_light_loss_tolerance_frames', 10) # M 값: RED 상태 해제 관용 프레임
-        self.declare_parameter('red_light_tracking_tolerance', 50)
+        self.declare_parameter('red_light_tracking_tolerance', 50) # 픽셀 단위 추적 허용 오차
         
         # ## HINTON'S V5 UPDATE START: Designate a single camera for traffic light detection ##
         self.declare_parameter('traffic_light_camera_id', 'cam1') # 신호등 인식에 사용할 카메라 ID ('cam1' or 'cam2')
