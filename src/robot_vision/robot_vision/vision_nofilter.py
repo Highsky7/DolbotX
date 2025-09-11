@@ -5,11 +5,18 @@
 # REFINED BY: Hinton (for Robust State Integration & Logic Correction)
 # DESCRIPTION:
 # ... (설명 생략) ...
-# 14. [Hinton's Update V2 for Stop Condition] 'supply_command' 발행 조건 변경.
-#     - 기존의 유클리드 거리(distance) 기반 정지 조건을
-#       카메라 기준 Z축 좌표(transformed_position[2]) 기반으로 변경.
-#     - z 값이 -0.1m ~ 0.4m 범위에 있을 때 'stop' 명령을 발행하도록 수정하여
-#       작업 거리를 더욱 정밀하게 제어.
+# 15. [Hinton's Update V3 for Robust Traffic Light Detection]
+#     - 'red_light_tracker'를 단순 카운터에서 상태 기계(State Machine)로 변경.
+#     - 'STATE_CLEAR', 'STATE_CANDIDATE', 'STATE_CONFIRMED_RED' 세 가지 상태를 정의하여
+#       신호등 인식의 불확실성을 체계적으로 관리.
+#     - 이력(Hysteresis) 원리를 도입: 'CONFIRMED_RED' 상태 진입 조건(N 프레임)과
+#       해제 조건(M 프레임)을 비대칭적으로 설계하여 '깜빡임(flickering)' 현상을 원천적으로 방지.
+#       이를 위해 'red_light_loss_tolerance_frames' 파라미터 추가.
+#
+# 16. [Hinton's Update V5 for Single-source Traffic Logic]
+#     - 'traffic_light_camera_id' 파라미터를 추가하여 신호등 인식 전담 카메라를 지정.
+#     - 지정된 카메라만 신호등 탐지 모델을 실행하고, 상태 기계를 업데이트하며, 명령을 발행하도록 로직 수정.
+#     - 이를 통해 여러 카메라로부터의 명령어 충돌을 방지하고 시스템 리소스를 최적화.
 #
 # MODIFICATION 1: Removed temporal detection filter for immediate supply command issuance.
 # MODIFICATION 2: Added a 3-second lock for the 'stop' command to ensure stable robot halt.
@@ -46,7 +53,7 @@ if (not hasattr(rs2, 'intrinsics')):
 class YoloVisionNode(Node):
     def __init__(self):
         super().__init__('yolo_traffic_node_no_qos_optimized')
-        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V4) ---")
+        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V5) ---")
         
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
@@ -55,23 +62,43 @@ class YoloVisionNode(Node):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use best provider.")
 
-        self.use_half = self.device == 'cuda'        
+        self.use_half = self.device == 'cuda'
         if self.use_half:
             self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
-        self.declare_parameter('red_light_min_area', 100)
-        self.declare_parameter('traffic_roi_top_ratio', 0.6)
-        self.declare_parameter('red_light_confirmation_frames', 3)
+        # ## HINTON'S MODIFICATION START: State Machine Parameters for Traffic Light ##
+        self.declare_parameter('red_light_min_area', 10000)
+        self.declare_parameter('traffic_roi_top_ratio', 0.4)
+        self.declare_parameter('red_light_confirmation_frames', 5) # N 값: RED 상태 확신 프레임
+        self.declare_parameter('red_light_loss_tolerance_frames', 10) # M 값: RED 상태 해제 관용 프레임
         self.declare_parameter('red_light_tracking_tolerance', 50)
+        
+        # ## HINTON'S V5 UPDATE START: Designate a single camera for traffic light detection ##
+        self.declare_parameter('traffic_light_camera_id', 'cam1') # 신호등 인식에 사용할 카메라 ID ('cam1' or 'cam2')
+        # ## HINTON'S V5 UPDATE END ##
+
         self.RED_LIGHT_MIN_AREA = self.get_parameter('red_light_min_area').get_parameter_value().integer_value
         self.TRAFFIC_ROI_TOP_RATIO = self.get_parameter('traffic_roi_top_ratio').get_parameter_value().double_value
         self.RED_LIGHT_CONFIRMATION_FRAMES = self.get_parameter('red_light_confirmation_frames').get_parameter_value().integer_value
+        self.RED_LIGHT_LOSS_TOLERANCE_FRAMES = self.get_parameter('red_light_loss_tolerance_frames').get_parameter_value().integer_value
         self.RED_LIGHT_TRACKING_TOLERANCE = self.get_parameter('red_light_tracking_tolerance').get_parameter_value().integer_value
+        
+        # ## HINTON'S V5 UPDATE START ##
+        self.TRAFFIC_LIGHT_CAMERA_ID = self.get_parameter('traffic_light_camera_id').get_parameter_value().string_value
+        self.get_logger().info(f"Primary camera for traffic light detection set to: '{self.TRAFFIC_LIGHT_CAMERA_ID}'")
+        # ## HINTON'S V5 UPDATE END ##
 
+        # 상태를 나타내는 상수 정의
+        self.STATE_CLEAR = 0
+        self.STATE_CANDIDATE = 1
+        self.STATE_CONFIRMED_RED = 2
+
+        # 각 카메라별 상태 추적기 초기화
         self.red_light_tracker = {
-            'cam1': {'counter': 0, 'last_center': None},
-            'cam2': {'counter': 0, 'last_center': None}
+            'cam1': {'state': self.STATE_CLEAR, 'confirmation_counter': 0, 'loss_counter': 0, 'last_center': None},
+            'cam2': {'state': self.STATE_CLEAR, 'confirmation_counter': 0, 'loss_counter': 0, 'last_center': None}
         }
+        # ## HINTON'S MODIFICATION END ##
 
         self.declare_parameter('proc_width', 640)
         self.declare_parameter('proc_height', 480)
@@ -120,10 +147,8 @@ class YoloVisionNode(Node):
         self.yolo_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
         
-        # ## MODIFICATION START: Variables for 3-second stop command lock ##
         self.stop_command_lock_until = None
         self.stop_command_duration = Duration(seconds=3.0)
-        # ## MODIFICATION END ##
 
         info_topic = "/camera/color/camera_info"
         self.camera_info_sub = self.create_subscription(CameraInfo, info_topic, self.camera_info_callback, 10)
@@ -201,17 +226,20 @@ class YoloVisionNode(Node):
             self.get_logger().error(f"Error in Realsense worker: {e}\n{traceback.format_exc()}")
         finally:
             self.realsense_lock.release()
-            
+    
+    # ## HINTON'S MODIFICATION START: Rewritten USB Camera Processor with State Machine & Single Source Logic ##
     def _process_usb_cam_data(self, compressed_msg, camera_id):
         lock = self.usb_cam_locks[camera_id]
         try:
             np_arr = np.frombuffer(compressed_msg.data, np.uint8)
             cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if cv_image is None: self.get_logger().warn(f"Failed to decompress USB cam image from {camera_id}."); return
-            
-            h, w, _ = cv_image.shape
-            tracker = self.red_light_tracker[camera_id]
+            if cv_image is None:
+                self.get_logger().warn(f"Failed to decompress USB cam image from {camera_id}.")
+                return
 
+            h, w, _ = cv_image.shape
+            
+            # --- 1. 마커 및 LED 처리 (모든 카메라에서 수행) ---
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
             roka_found, enemy_found = False, False
             for r in results_marker:
@@ -222,61 +250,94 @@ class YoloVisionNode(Node):
             
             led_data = "roka" if roka_found else "enemy" if enemy_found else "none"
             self.led_pub.publish(String(data=led_data))
-            
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
             
-            results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
-            red_found, green_found = False, False
-            
-            best_red_candidate_center = None
+            # ## HINTON'S V5 UPDATE START: 지정된 카메라만 신호등 로직을 처리 ##
+            if camera_id == self.TRAFFIC_LIGHT_CAMERA_ID:
+                tracker = self.red_light_tracker[camera_id]
 
-            for r in results_traffic:
-                for box_data in r.boxes.cpu().numpy():
-                    label = self.traffic_model_class_names[int(box_data.cls[0])]
+                # --- 2. 신호등 탐지 및 후보 선정 ---
+                results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
+                
+                green_found = False
+                best_red_candidate_center = None
+                
+                for r in results_traffic:
+                    for box_data in r.boxes.cpu().numpy():
+                        label = self.traffic_model_class_names[int(box_data.cls[0])]
+                        
+                        if label == 'green':
+                            green_found = True
+                            continue
+
+                        if label == 'red':
+                            if box_data.conf[0] < 0.7: continue
+                            box = box_data.xyxy[0].astype(int)
+                            box_w = box[2] - box[0]; box_h = box[3] - box[1]
+                            if (box_w * box_h) < self.RED_LIGHT_MIN_AREA: continue
+                            cy = (box[1] + box[3]) / 2
+                            if cy > h * self.TRAFFIC_ROI_TOP_RATIO: continue
+                            
+                            best_red_candidate_center = np.array([(box[0] + box[2]) / 2, cy])
+                            break
+                    if best_red_candidate_center is not None:
+                        break
+                
+                # --- 3. 상태 기계(State Machine) 로직 ---
+                red_light_detected_in_frame = False
+                if best_red_candidate_center is not None:
+                    if tracker['last_center'] is None or \
+                       np.linalg.norm(best_red_candidate_center - tracker['last_center']) < self.RED_LIGHT_TRACKING_TOLERANCE:
+                        red_light_detected_in_frame = True
+                        tracker['last_center'] = best_red_candidate_center
+
+                if tracker['state'] == self.STATE_CLEAR:
+                    if red_light_detected_in_frame:
+                        tracker['state'] = self.STATE_CANDIDATE
+                        tracker['confirmation_counter'] = 1
+                        tracker['loss_counter'] = 0
+                        self.get_logger().debug(f"[{camera_id}] Red light candidate found. Entering CANDIDATE state.")
+                
+                elif tracker['state'] == self.STATE_CANDIDATE:
+                    if red_light_detected_in_frame:
+                        tracker['confirmation_counter'] += 1
+                        if tracker['confirmation_counter'] >= self.RED_LIGHT_CONFIRMATION_FRAMES:
+                            tracker['state'] = self.STATE_CONFIRMED_RED
+                            tracker['loss_counter'] = 0
+                            self.get_logger().info(f"[{camera_id}] Red light confirmed. Entering CONFIRMED_RED state.")
+                    else:
+                        tracker['state'] = self.STATE_CLEAR
+                        tracker['confirmation_counter'] = 0
+                        tracker['last_center'] = None
+                        self.get_logger().debug(f"[{camera_id}] Candidate lost. Returning to CLEAR state.")
+
+                elif tracker['state'] == self.STATE_CONFIRMED_RED:
+                    if red_light_detected_in_frame:
+                        tracker['loss_counter'] = 0
+                    else:
+                        tracker['loss_counter'] += 1
+                        if tracker['loss_counter'] >= self.RED_LIGHT_LOSS_TOLERANCE_FRAMES:
+                            tracker['state'] = self.STATE_CLEAR
+                            tracker['confirmation_counter'] = 0
+                            tracker['loss_counter'] = 0
+                            tracker['last_center'] = None
+                            self.get_logger().info(f"[{camera_id}] Red light lost for {self.RED_LIGHT_LOSS_TOLERANCE_FRAMES} frames. Returning to CLEAR state.")
+
+                # --- 4. 최종 명령 발행 ---
+                command_to_publish = None
+                if tracker['state'] == self.STATE_CONFIRMED_RED:
+                    command_to_publish = "stop"
+                elif green_found:
+                    command_to_publish = "go"
+
+                if command_to_publish is not None:
+                    self.traffic_pub.publish(String(data=command_to_publish))
                     
-                    if label == 'green':
-                        green_found = True
-                        continue
-
-                    if label == 'red':
-                        if box_data.conf[0] < 0.7: continue
-                        
-                        box = box_data.xyxy[0].astype(int)
-                        box_w = box[2] - box[0]; box_h = box[3] - box[1]
-
-                        if (box_w * box_h) < self.RED_LIGHT_MIN_AREA: continue
-
-                        cy = (box[1] + box[3]) / 2
-                        if cy > h * self.TRAFFIC_ROI_TOP_RATIO: continue
-                        
-                        current_center = np.array([ (box[0] + box[2]) / 2, cy ])
-                        if best_red_candidate_center is None:
-                             best_red_candidate_center = current_center
+                # --- 5. 시각화 (신호등) ---
+                annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
+            # ## HINTON'S V5 UPDATE END ##
             
-            if best_red_candidate_center is not None:
-                if tracker['last_center'] is not None and \
-                   np.linalg.norm(best_red_candidate_center - tracker['last_center']) < self.RED_LIGHT_TRACKING_TOLERANCE:
-                    tracker['counter'] += 1
-                else:
-                    tracker['counter'] = 1
-                tracker['last_center'] = best_red_candidate_center
-            else:
-                tracker['counter'] = 0
-                tracker['last_center'] = None
-
-            if tracker['counter'] >= self.RED_LIGHT_CONFIRMATION_FRAMES:
-                red_found = True
-
-            command_to_publish = None
-            if red_found:
-                command_to_publish = "stop"
-            elif green_found: 
-                command_to_publish = "go"
-
-            if command_to_publish is not None:
-                self.traffic_pub.publish(String(data=command_to_publish))
-            
-            annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
+            # --- 6. 최종 이미지 발행 (모든 카메라 공통) ---
             viz_publisher = self.usb_cam1_viz_pub if camera_id == 'cam1' else self.usb_cam2_viz_pub
             self.publish_compressed_viz(viz_publisher, annotated_image)
 
@@ -284,6 +345,7 @@ class YoloVisionNode(Node):
             self.get_logger().error(f"Error in USB Cam worker ({camera_id}): {e}\n{traceback.format_exc()}")
         finally:
             lock.release()
+    # ## HINTON'S MODIFICATION END ##
 
     def pick_place_response_callback(self, future):
         try:
@@ -298,7 +360,6 @@ class YoloVisionNode(Node):
         finally:
             self.service_call_in_progress = False
     
-    # ## MODIFICATION START: Rewritten run_supply_tracking with 3-second stop lock ##
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image, header):
         if self.intrinsics is None:
             return False
@@ -351,21 +412,16 @@ class YoloVisionNode(Node):
                     cv2.rectangle(color_image_to_draw, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 255), 2)
                     cv2.putText(color_image_to_draw, label, (orig_x1, orig_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-        # --- Command Issuing Logic with 3-second Lock ---
-
         current_time = self.get_clock().now()
-        # 1. 잠금(lock) 상태 확인 및 갱신
         if self.stop_command_lock_until is not None and current_time >= self.stop_command_lock_until:
             self.get_logger().info("Stop command lock has expired.")
             self.stop_command_lock_until = None
 
-        # 2. 잠금이 활성화되어 있다면, 'stop'을 강제하고 나머지 로직은 건너뜀
         if self.stop_command_lock_until is not None:
             self.get_logger().debug("Stop command is locked. Publishing 'stop'.")
             self.supply_pub.publish(String(data='stop'))
             return supply_found_this_frame
 
-        # 3. 잠금이 비활성화 상태일 때의 일반 로직
         is_in_stop_zone = (supply_found_this_frame and 
                            transformed_position is not None and 
                            -0.1 <= transformed_position[2] <= 0.4)
@@ -374,23 +430,18 @@ class YoloVisionNode(Node):
             z_coord = transformed_position[2]
             self.get_logger().info(f"Target in Z-range ({z_coord:.2f}m). Publishing 'stop' and initiating 3s lock.")
             self.supply_pub.publish(String(data='stop'))
-            
-            # 'stop' 명령과 함께 3초 잠금 타이머 설정
             self.stop_command_lock_until = current_time + self.stop_command_duration
             
-            # 서비스 호출
             self.service_call_in_progress = True
             request = PickPlace.Request()
             request.x, request.y, request.z = transformed_position.tolist()
             future = self.pick_place_client.call_async(request)
             future.add_done_callback(self.pick_place_response_callback)
         else:
-            # 정지 조건이 아니거나, 서비스가 이미 진행 중일 때는 'go'를 발행
             if not self.service_call_in_progress:
                 self.supply_pub.publish(String(data='go'))
             
         return supply_found_this_frame
-    # ## MODIFICATION END ##
 
     def publish_compressed_viz(self, publisher, cv_image):
         msg = CompressedImage()
@@ -407,7 +458,7 @@ class YoloVisionNode(Node):
                 x1, y1, x2, y2 = map(int, box.xyxy[0]); conf, cls_id = box.conf[0], int(box.cls[0])
                 label = self.marker_class_names[cls_id] if cls_id < len(self.marker_class_names) else "Unknown"
                 cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                cv2.putText(image, f"{label}: {conf:.2f}", (x1, y2 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
         return image
 
     def draw_traffic_detections(self, image, results):
