@@ -39,7 +39,7 @@ class VisionMarkerDetectorNode(Node):
 
         try:
             # 비전 마커 탐지 모델 로드
-            self.declare_parameter('marker_model_path', './vision_enemy3.onnx')
+            self.declare_parameter('marker_model_path', './vision_marker.onnx')
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
             self.marker_model = YOLO(marker_model_path, task='detect')
             self.marker_class_names = ['A', 'E', 'Heart', 'K', 'M', 'O', 'R', 'Y']
