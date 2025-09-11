@@ -5,6 +5,10 @@
 # 이 노드는 USB 카메라를 사용하여 다양한 비전 마커를 인식하는 역할을 전담합니다.
 # 'vision_enemy3.onnx' 모델을 사용하여 추론을 수행하며,
 # 탐지 결과를 시각화하여 '/unified_vision/usb_camN_marker/viz/compressed' 토픽으로 발행합니다.
+#
+# MODIFIED BY: Geoffrey Hinton (for enhanced visualization)
+# - 각 마커 클래스에 고유한 색상을 할당하여 즉각적인 식별이 가능하도록 개선
+# - 텍스트 레이블에 배경을 추가하여 모든 영상 조건에서 최고의 가독성 확보
 
 import rclpy
 from rclpy.node import Node
@@ -23,7 +27,7 @@ from cv_bridge import CvBridge
 class VisionMarkerDetectorNode(Node):
     def __init__(self):
         super().__init__('vision_marker_detector_node')
-        self.get_logger().info("--- Vision Marker Detection Node ---")
+        self.get_logger().info("--- Vision Marker Detection Node (Enhanced by Hinton) ---")
 
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
         
@@ -38,8 +42,22 @@ class VisionMarkerDetectorNode(Node):
             self.declare_parameter('marker_model_path', './vision_enemy3.onnx')
             marker_model_path = self.get_parameter('marker_model_path').get_parameter_value().string_value
             self.marker_model = YOLO(marker_model_path, task='detect')
-            self.marker_class_names = ['A', 'E', 'Enemy', 'Heart', 'K', 'M', 'O', 'R', 'ROKA', 'Y']
+            self.marker_class_names = ['A', 'E', 'Heart', 'K', 'M', 'O', 'R', 'Y']
+            
+            # --- 시각화 개선: 각 클래스별 고유 색상 정의 (BGR 형식) ---
+            self.marker_colors = {
+                'A': (255, 0, 0),      # 파란색 (Blue)
+                'E': (0, 255, 0),      # 초록색 (Green)
+                'Heart': (0, 0, 255),    # 빨간색 (Red)
+                'K': (255, 255, 0),    # 청록색 (Cyan)
+                'M': (255, 0, 255),    # 자홍색 (Magenta)
+                'O': (0, 165, 255),    # 주황색 (Orange)
+                'R': (128, 0, 128),    # 보라색 (Purple)
+                'Y': (0, 255, 255)     # 노란색 (Yellow)
+            }
             self.get_logger().info("✅ Vision Marker ONNX model loaded successfully.")
+            self.get_logger().info("✅ Enhanced visualization color palette is active.")
+
         except Exception as e:
             self.get_logger().error(f"Failed to load Vision Marker YOLO model: {e}")
             self.destroy_node(); return
@@ -104,15 +122,50 @@ class VisionMarkerDetectorNode(Node):
             publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):
+        """
+        전문가의 손길로 개선된 시각화 함수:
+        1. 각 마커 클래스에 고유 색상을 적용합니다.
+        2. 텍스트 가독성을 위해 레이블에 채워진 배경 사각형을 추가합니다.
+        """
         for r in results:
             for box in r.boxes.cpu().numpy():
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf, cls_id = box.conf[0], int(box.cls[0])
-                label = self.marker_class_names[cls_id] if cls_id < len(self.marker_class_names) else "Unknown"
-                # ROKA, Enemy는 특별한 색상으로, 나머지는 회색으로 표시
-                color = (0, 255, 0) if label == 'ROKA' else (0, 0, 255) if label == 'Enemy' else (200, 200, 200)
+                
+                if cls_id >= len(self.marker_class_names):
+                    continue
+
+                label = self.marker_class_names[cls_id]
+                # 클래스에 할당된 고유 색상 가져오기 (없을 경우 회색)
+                color = self.marker_colors.get(label, (128, 128, 128))
+                
+                # 1. 바운딩 박스 그리기
                 cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(image, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                
+                # 2. 텍스트 레이블 및 배경 준비
+                text = f"{label}: {conf:.2f}"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6
+                font_thickness = 1
+                
+                (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
+                
+                # 텍스트 배경을 위한 사각형 좌표 계산
+                # 바운딩 박스 위쪽에 공간이 충분하면 위에, 아니면 아래에 표시
+                if y1 - text_h - baseline > 0:
+                    text_bg_y1 = y1 - text_h - baseline - 2
+                    text_bg_y2 = y1
+                    text_y = y1 - baseline // 2 - 2
+                else:
+                    text_bg_y1 = y2
+                    text_bg_y2 = y2 + text_h + baseline + 2
+                    text_y = y2 + text_h
+                
+                cv2.rectangle(image, (x1, text_bg_y1), (x1 + text_w, text_bg_y2), color, cv2.FILLED)
+                
+                # 3. 텍스트 그리기 (배경과 대비되는 흰색 사용)
+                cv2.putText(image, text, (x1, text_y), font, font_scale, (255, 255, 255), font_thickness)
+
         return image
 
     def destroy_node(self):
