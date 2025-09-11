@@ -8,8 +8,12 @@ ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-fil
 ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
 2번 터미널(jetson, 뎁스 카메라 노드)
 realros
-3번 터미널(lake, vision인식 노드)
-ros2 run robot_vision vision_nofilter
+3번 터미널(lake, spring vision인식 노드)
+ros2 run robot_vision spring_vision
+3번 터미널(lake, fall vision인식 노드)
+ros2 run robot_vision fall_vision
+3번 터미널(lake, summer vision인식 노드)
+ros2 run robot_vision summer_vision
 4번 터미널(lake, 주행 가능 영역 인식 노드)
 1 onnx ver:
 ros2 run robot_vision springfall_drive

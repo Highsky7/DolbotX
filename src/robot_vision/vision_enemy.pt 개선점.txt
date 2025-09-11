@@ -1,1 +1,0 @@
-O, R, Heart Validation set Average Precision dropped.
