@@ -1,2 +1,0 @@
-cd DolbotX/src/robot_vision/robot_vision/utils
-python h264_converter.py
