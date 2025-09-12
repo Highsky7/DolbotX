@@ -48,7 +48,7 @@ class TrafficSupplyRobustNode(Node):
 
         # 신호등 상태 기계 파라미터 선언
         self.declare_parameter('red_light_min_area', 10000)
-        self.declare_parameter('traffic_roi_top_ratio', 1.0)
+        self.declare_parameter('traffic_roi_top_ratio', 0.7)
         self.declare_parameter('red_light_confirmation_frames', 3)
         self.declare_parameter('red_light_loss_tolerance_frames', 7)
         self.declare_parameter('red_light_tracking_tolerance', 50)
@@ -94,7 +94,7 @@ class TrafficSupplyRobustNode(Node):
             self.get_logger().error(f"Failed to load Supply model: {e}. Supply detection will be disabled.")
 
         try:
-            self.declare_parameter('traffic_model_path', './traffic_robo.onnx')
+            self.declare_parameter('traffic_model_path', './traffic_robo2.onnx')
             traffic_model_path = self.get_parameter('traffic_model_path').get_parameter_value().string_value
             self.traffic_detection_model = YOLO(traffic_model_path, task='detect')
             self.traffic_model_class_names = ['green', 'red']
