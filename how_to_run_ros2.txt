@@ -15,13 +15,13 @@ ros2 run robot_vision fall_vision
 3번 터미널(lake, summer vision인식 노드)
 ros2 run robot_vision summer_vision
 4번 터미널(lake, 주행 가능 영역 인식 노드)
-1 onnx ver:
+1 onnx ver(lake, 봄가을주행):
 ros2 run robot_vision springfall_drive
-2 onnx ver:
+2 onnx ver(lake, 겨울주행):
 ros2 run robot_vision winter_drive
-3 onnx ver:
+3 onnx ver(lake, 여름주행):
 ros2 run robot_vision summer_drive
-unitree ver:
+unitree ver(lake, 추종 코드):
 ros2 run robot_vision unitree_tracker
 5번 터미널(lake, 조작 manual코드)
 cd ws_moveit
