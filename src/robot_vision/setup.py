@@ -33,6 +33,7 @@ setup(
             'bezier_winter_drive = robot_vision.bezier_winter_drive:main',
             'unitree_tracker = robot_vision.unitree_tracker:main',
             'summer_vision = robot_vision.summer_vision:main',
+            'summer_vision_manual = robot_vision.summer_vision_manual:main',
             'springfall_vision = robot_vision.springfall_vision:main',
             'spring_vision = robot_vision.spring_vision:main',
             'fall_vision = robot_vision.fall_vision:main',
