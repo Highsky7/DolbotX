@@ -41,7 +41,7 @@ class RokaEnemyDetectorNode(Node):
             
             # 중요: 이 클래스 이름은 roka_enemy.onnx 모델이 학습된 클래스 순서와 정확히 일치해야 합니다.
             # 예: 0번 클래스가 ROKA, 1번 클래스가 Enemy인 경우
-            self.roka_enemy_class_names = ['ROKA', 'Enemy']
+            self.roka_enemy_class_names = ['Enemy', 'ROKA']
             self.get_logger().info("✅ ROKA/Enemy ONNX model loaded successfully.")
         except Exception as e:
             self.get_logger().error(f"Failed to load ROKA/Enemy YOLO model: {e}")
