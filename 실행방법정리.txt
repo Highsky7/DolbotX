@@ -1,0 +1,82 @@
+ws_moveit 패키지 cbi로 빌드 절대 금지!!!!!!
+
+1. 가을 구간
+(vision node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision fall_vision
+
+설명: 비전마커를 직접 데이터를 생성하고, 여러가지 데이터 증강기법을
+활용하여서 라벨링한 후 객체 인식 모델을 학습시킴.
+
+(drive node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision bezier_springfall_drive
+
+설명: bev 시점에서 미리 학습시킨 사이클 펌프트랙의
+민트색 바닥면을 주행가능영역으로 인식하여서
+해당 주행가능영역을 활용하여서 베지어곡선의 경로를 생성하고
+해당 경로를 퓨어퍼슛 알고리즘을 활용하여서 추종함.
+
+2. 겨울 구간
+(vision node 터미널)
+없음.
+(drive node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision bezier_winter_drive
+
+설명: bev 시점에서 미리 학습시킨 사이클 펌프트랙의
+민트색 바닥면과 눈오는 도로면을 주행가능영역으로 인식하여서
+해당 주행가능영역을 활용하여서 베지어곡선의 경로를 생성하고
+해당 경로를 퓨어퍼슛 알고리즘을 활용하여서 추종함.
+
+3. 추종 구간
+(unitree tracker 인지 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision unitree_tracker
+
+설명: unitree 로봇의 후미를 학습시키고 뎁스카메라를 통해
+해당 로봇까지의 로봇 기준 좌표계 기준 x,y좌표를 얻어서
+일정 거리를 유지하면서 주행할 수 있도록하는 알고리즘을 개발함.
+
+4. 봄 구간
+(vision node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision spring_vision
+
+설명: 생성형 인공지능을 활용하여서 합성 데이터를 생성하고
+해당 데이터를 사용하여서 북한군 군복을 학습시키고 ROKA군 군복 또한 학습시켜서
+피아식별을 하는 객체 인식 알고리즘을 개발함.
+
+(drive node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision bezier_springfall_drive
+
+설명: bev 시점에서 미리 학습시킨 사이클 펌프트랙의
+민트색 바닥면을 주행가능영역으로 인식하여서
+해당 주행가능영역을 활용하여서 베지어곡선의 경로를 생성하고
+해당 경로를 퓨어퍼슛 알고리즘을 활용하여서 추종함.
+
+5. 여름 구간
+(vision node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision summer_vision
+
+설명: 신호등을 인식하여서 빨간불일 경우 정지,
+초록불일 경우 출발을 하도록 하는 알고리즘을 개발함.
+
+(drive node 터미널)
+cd ws_moveit
+si
+ros2 run robot_vision bezier_summer_drive
+
+설명: bev 시점에서 미리 학습시킨 사이클 펌프트랙의
+민트색 바닥면과 모래, 자갈면을 주행가능영역으로 인식하여서
+해당 주행가능영역을 활용하여서 베지어곡선의 경로를 생성하고
+해당 경로를 퓨어퍼슛 알고리즘을 활용하여서 추종함.
