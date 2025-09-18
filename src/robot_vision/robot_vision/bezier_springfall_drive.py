@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: springfall_drive.py
+# FILE: bezier_springfall_drive.py
 # AUTHOR: Geoffrey Hinton
 # DESCRIPTION:
 # [Hinton's Final Optimization with Bézier Curve Path Generation]

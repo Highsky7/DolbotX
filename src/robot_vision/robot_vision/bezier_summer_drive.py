@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: summer_drive.py
+# FILE: bezier_summer_drive.py
 # AUTHOR: Geoffrey Hinton
 # DESCRIPTION:
 # [Hinton's Triple-Fusion with Bézier Curve Path Generation]

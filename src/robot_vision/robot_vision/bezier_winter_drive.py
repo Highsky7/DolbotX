@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: winter_drive.py
+# FILE:bezier_winter_drive.py
 # AUTHOR: Geoffrey Hinton
 # DESCRIPTION:
 # [Hinton's Advanced Fusion with Bézier Curve Path Generation]
