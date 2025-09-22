@@ -1,2 +1,3 @@
 ultralytics == 8.3.172
 numpy==1.26.4
+pyrealsense2 == 2.56.5.9235
