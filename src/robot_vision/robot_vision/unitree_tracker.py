@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: unitree_tracker.py
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
 # Intel RealSense D435i 카메라와 unitree_go2.onnx YOLO 모델을 사용하여
 # 객체를 탐지하고, 해당 객체의 3D 좌표를 계산합니다.

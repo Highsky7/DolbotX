@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE:bezier_winter_drive.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
-# [Hinton's Advanced Fusion with Bézier Curve Path Generation]
 # 1. 경로 계산 로직을 '4점 베지어 곡선'으로 대체하여 눈길 등 급커브 구간에서의 안정성 및 강건성 극대화
 # 2. 듀얼 모델(Drivable, Snow) 융합 결과에 베지어 경로를 적용
-# 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용
-# 4. 콜백 함수에서 모든 연산을 제거하고 작업 스레드로 이전하여 통신 지연 가능성 원천 차단
-# 5. [핵심] ROI 내에서 '지능적 제어점 선택'을 통해 베지어 경로 자동 생성
-# 6. Pure Pursuit 알고리즘 안정성 강화: 경로가 짧을 경우 마지막 점을 목표점으로 지정
-# 7. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
+# 3. 콜백 함수에서 모든 연산을 제거하고 작업 스레드로 이전하여 통신 지연 가능성 원천 차단
+# 4. [핵심] ROI 내에서 '지능적 제어점 선택'을 통해 베지어 경로 자동 생성
+# 5. Pure Pursuit 알고리즘 안정성 강화: 경로가 짧을 경우 마지막 점을 목표점으로 지정
+# 6. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
 
 import rclpy
 from rclpy.node import Node

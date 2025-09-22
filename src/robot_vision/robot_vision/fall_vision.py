@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: vision_marker_detector.py
+# FILE: fall_vision.py
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
 # 이 노드는 USB 카메라를 사용하여 다양한 비전 마커를 인식하는 역할을 전담합니다.
 # 'vision_enemy3.onnx' 모델을 사용하여 추론을 수행하며,
 # 탐지 결과를 시각화하여 '/unified_vision/usb_camN_marker/viz/compressed' 토픽으로 발행합니다.
-#
-# MODIFIED BY: Geoffrey Hinton (for enhanced visualization)
 # - 각 마커 클래스에 고유한 색상을 할당하여 즉각적인 식별이 가능하도록 개선
 # - 텍스트 레이블에 배경을 추가하여 모든 영상 조건에서 최고의 가독성 확보
 # - 텍스트 색상을 검은색으로, 두께를 강화하여 시인성 극대화
@@ -124,7 +123,7 @@ class VisionMarkerDetectorNode(Node):
 
     def draw_marker_detections(self, image, results):
         """
-        전문가의 손길로 개선된 시각화 함수:
+        개선된 시각화 함수:
         1. 각 마커 클래스에 고유 색상을 적용합니다.
         2. 텍스트 가독성을 위해 레이블에 채워진 배경 사각형을 추가합니다.
         3. 최고의 시인성을 위해 텍스트 색상을 검은색으로, 두께를 강화합니다.
@@ -149,7 +148,7 @@ class VisionMarkerDetectorNode(Node):
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 0.6
                 
-                # --- [Hinton's Enhancement] 글자 두께 강화 ---
+                #글자 두께 강화 ---
                 font_thickness = 2
                 
                 (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
@@ -167,7 +166,7 @@ class VisionMarkerDetectorNode(Node):
                 
                 cv2.rectangle(image, (x1, text_bg_y1), (x1 + text_w, text_bg_y2), color, cv2.FILLED)
                 
-                # --- [Hinton's Enhancement] 텍스트 색상을 검은색(0,0,0)으로 변경하여 시인성 극대화 ---
+                # 텍스트 색상을 검은색(0,0,0)으로 변경하여 시인성 극대화 ---
                 cv2.putText(image, text, (x1, text_y), font, font_scale, (0, 0, 0), font_thickness)
 
         return image

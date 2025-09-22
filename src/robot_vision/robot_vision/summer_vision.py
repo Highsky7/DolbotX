@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: traffic_supply_node_robust.py
+# FILE: summer_vision.py
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
 # 이 노드는 로봇의 주행과 관련된 신호등과 보급상자 인식을 전담합니다.
 # [수정됨] 각 기능(신호등, 보급상자)이 독립적인 스레드 풀에서 동작하여

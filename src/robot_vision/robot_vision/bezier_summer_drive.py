@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: bezier_summer_drive.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
-# [Hinton's Triple-Fusion with Bézier Curve Path Generation]
 # 1. 경로 계산 로직을 '4점 베지어 곡선'으로 대체하여 복합 환경(모래, 돌)에서의 안정성 및 강건성 극대화
 # 2. 트리플 모델(Drivable, Sand, Stone) 융합 결과에 베지어 경로를 적용
 # 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: winter_drive.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
-# [Hinton's Advanced Fusion & Robust Pure Pursuit Logic with Attentional ROI]
 # 1. 경로 계산 로직을 순수 NumPy 벡터화 연산으로 대체하여 CPU 병목 현상 제거 (성능 극대화)
 # 2. 시각화 토픽 구독자가 있을 때만 시각화 연산을 수행하여 불필요한 CPU 자원 낭비 방지
 # 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용
@@ -73,7 +72,7 @@ class YoloBevFusedDrivableAreaNode(Node):
     _MAX_SMOOTHING_ALPHA = 0.6
     _MIN_SMOOTHING_ALPHA = 0.3
 
-    # [힌튼의 핵심 수정] 경로 탐색을 위한 ROI(관심 영역) 정의 (비율 기준)
+    # 경로 탐색을 위한 ROI(관심 영역) 정의 (비율 기준)
     _ROI_TOP_Y_RATIO = 0.5
     _ROI_BOTTOM_Y_RATIO = 1.0
     _ROI_WIDTH_RATIO = 1.0
@@ -211,7 +210,7 @@ class YoloBevFusedDrivableAreaNode(Node):
         return x_rear, y_rear
 
     def calculate_steering_from_area(self, area_mask):
-        # [힌튼의 핵심 수정] ROI 적용 로직 (springfall과 동일)
+        # ROI 적용 로직 (springfall과 동일)
         roi_top_y = int(self.bev_h * self._ROI_TOP_Y_RATIO)
         roi_bottom_y = int(self.bev_h * self._ROI_BOTTOM_Y_RATIO)
         roi_half_width = int((self.bev_w * self._ROI_WIDTH_RATIO) / 2)
@@ -319,7 +318,7 @@ class YoloBevFusedDrivableAreaNode(Node):
         if viz_data.get('goal_point_bev') is not None:
             cv2.circle(viz_image, viz_data['goal_point_bev'], 10, (0, 0, 255), -1)
 
-        # [힌튼의 핵심 수정] ROI 영역을 시각화합니다.
+        # ROI 영역을 시각화합니다.
         if 'roi_coords' in viz_data:
             x1, y1, x2, y2 = viz_data['roi_coords']
             cv2.rectangle(viz_image, (x1, y1), (x2, y2), (0, 255, 255), 2)

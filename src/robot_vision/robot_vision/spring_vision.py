@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: roka_enemy_detector.py
+# FILE: spring_vision.py
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
 # 이 노드는 USB 카메라를 사용하여 아군('ROKA')과 적군('Enemy') 군복을 인식하는 역할을 전담합니다.
 # 'roka_enemy.onnx' 모델을 사용하여 추론을 수행하며,
@@ -40,7 +41,7 @@ class RokaEnemyDetectorNode(Node):
             self.roka_enemy_model = YOLO(roka_enemy_model_path, task='detect')
             
             # 중요: 이 클래스 이름은 roka_enemy.onnx 모델이 학습된 클래스 순서와 정확히 일치해야 합니다.
-            # 예: 0번 클래스가 ROKA, 1번 클래스가 Enemy인 경우
+            # 예: 0번 클래스가 Enemy, 1번 클래스가 ROKA인 경우
             self.roka_enemy_class_names = ['Enemy', 'ROKA']
             self.get_logger().info("✅ ROKA/Enemy ONNX model loaded successfully.")
         except Exception as e:

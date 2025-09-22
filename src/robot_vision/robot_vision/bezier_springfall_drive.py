@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: bezier_springfall_drive.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: Seungmin Lee
 # DESCRIPTION:
-# [Hinton's Final Optimization with Bézier Curve Path Generation]
 # 1. 경로 계산 로직을 '4점 베지어 곡선'으로 대체하여 급커브 구간에서의 안정성 및 강건성 극대화
 # 2. 시각화 토픽 구독자가 있을 때만 시각화 연산을 수행하여 불필요한 CPU 자원 낭비 방지
 # 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용
@@ -66,7 +65,7 @@ class YoloBevDrivableAreaNode(Node):
     _ROI_BOTTOM_Y_RATIO = 1.0
     _ROI_WIDTH_RATIO = 1.0
 
-    # [힌튼의 핵심 수정] 베지어 곡선 제어점 위치 조정을 위한 파라미터
+    # 베지어 곡선 제어점 위치 조정을 위한 파라미터
     _BEZIER_HANDLE_RATIO = 0.5 # 값이 클수록 곡선이 더 완만해짐 (0.0 ~ 1.0)
     
     def __init__(self):
@@ -180,7 +179,6 @@ class YoloBevDrivableAreaNode(Node):
             return None, viz_data
         
         # ================================================================= #
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [힌튼의 베지어 곡선 로직] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
         # 1. 제어점 P0 (시작점)과 P3 (종료점)을 정의합니다.
         p0 = (roi_center_x, roi_bottom_y)
         
@@ -202,7 +200,6 @@ class YoloBevDrivableAreaNode(Node):
         x_bev_coords, y_bev_coords = path_points[:, 0], path_points[:, 1]
         
         viz_data.update({'bezier_points': path_points, 'control_points': [p0, p1, p2, p3]})
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [힌튼의 베지어 곡선 로직] ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
         # ================================================================= #
 
         x_veh, y_veh = self.image_to_vehicle((x_bev_coords, y_bev_coords))
