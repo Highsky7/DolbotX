@@ -1,0 +1,17 @@
+imu_preprocess_node:
+  ros__parameters:
+    # Pre-calibrated IMU bias values
+    use_precalibrated_bias: true
+    
+    # Accelerometer bias [m/s²] - Updated 2025-09-10
+    bias_acc_x: -0.18235066373775077
+    bias_acc_y: -0.12600280748257295
+    bias_acc_z: 9.803167620019881  # Calculated as (mean_z - g) = (9.5599 - 9.80665)
+    
+    # Gyroscope bias [rad/s] - Updated 2025-09-10
+    bias_gyro_x: 0.02638254888501663
+    bias_gyro_y: -0.014319634973135391
+    bias_gyro_z: -0.0004700288553260672
+    
+    # Low-pass filter settings
+    lpf_cutoff: 5.0  # 0 to disable LPF

@@ -1,0 +1,10 @@
+amcl:
+  ros__parameters:
+    base_frame_id: "base_link"   # ★ 여기!
+    odom_frame_id: "odom"
+    global_frame_id: "map"
+    scan_topic: "/scan"          # 네 스캔 토픽명에 맞게
+    set_initial_pose: true
+    initial_pose_x: 0.0
+    initial_pose_y: -1.0
+    initial_pose_a: 0.0   # 라디안
