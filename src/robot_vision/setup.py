@@ -48,6 +48,7 @@ setup(
             'camera2_recorder = robot_vision.utils.camera2_recorder:main',
             'fire_detect = robot_vision.fire_detector:main',
             'pick_place_server = robot_vision.pick_place_server:main',
+            'button_vision = robot_vision.button_vision:main',
         ],
     },
 )

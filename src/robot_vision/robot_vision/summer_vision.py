@@ -336,7 +336,7 @@ class TrafficSupplyRobustNode(Node):
             self.supply_pub.publish(String(data='stop'))
             return supply_found_this_frame
 
-        is_in_stop_zone = (supply_found_this_frame and transformed_position is not None and -0.1 <= transformed_position[2] <= 0.4)
+        is_in_stop_zone = (supply_found_this_frame and transformed_position is not None and -0.2 <= transformed_position[2] <= 0.6)
 
         if is_in_stop_zone and not self.service_call_in_progress:
             self.get_logger().info(f"Target in Z-range ({transformed_position[2]:.2f}m). Locking 'stop' for 3s.")
