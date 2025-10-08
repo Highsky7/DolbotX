@@ -29,7 +29,7 @@ ros2 launch moveit_servo arm_servo.launch.py
 6-1 터미널(lake, self drive 구동)
 cd DolbotX
 si
-ros2 launch steering_to_diff stering_to_diff.launch.py
+ros2 launch steering_to_diff steering_to_diff.launch.py
 6-2 터미널(jetson, self drive, manual 구동 -> serial bridge)
 cd DolbotX_control
 si
