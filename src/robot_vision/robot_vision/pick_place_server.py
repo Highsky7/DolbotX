@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ROS2 Service Server for a Pick and Place Task.
+Example ROS2 Service Server for a Pick and Place Task.
 
 This script creates a simple ROS2 service server that provides a 'PickPlace'
 service. The server waits for a client to send 3D coordinates (x, y, z),
