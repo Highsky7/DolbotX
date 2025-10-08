@@ -79,7 +79,7 @@ Install the required Python packages:
 ```bash
 pip install -r requirements.txt
 ```
-This will install `ultralytics` and `numpy`.
+This will install `ultralytics` with specific version of `numpy` and `pyrealsense2`.
 
 ### Installation
 
