@@ -1,37 +1,76 @@
 #!/usr/bin/env python3
+"""
+ROS2 Service Server for a Pick and Place Task.
+
+This script creates a simple ROS2 service server that provides a 'PickPlace'
+service. The server waits for a client to send 3D coordinates (x, y, z),
+logs the received coordinates, and returns a success response.
+
+This server acts as a placeholder or a simple mock for a more complex robot
+arm control system. It demonstrates the server-side implementation of a
+custom service interface.
+"""
 import rclpy
 from rclpy.node import Node
-from mtc_interfaces.srv import PickPlace # PickPlace 서비스 타입을 임포트합니다.
+from mtc_interfaces.srv import PickPlace  # Import the custom service type.
+
 
 class PickPlaceServerNode(Node):
+    """
+    A ROS2 node that provides a server for the PickPlace service.
+    """
+
     def __init__(self):
+        """
+        Initialize the PickPlaceServerNode.
+
+        This creates the service named 'pick_place_service' and waits for
+        requests from clients.
+        """
         super().__init__('pick_place_server_node')
-        # 'pick_place' 라는 이름으로 서비스를 생성합니다.
-        # 클라이언트가 요청하면 self.pick_place_callback 함수가 실행됩니다.
+        # Create a service with the name 'pick_place_service'.
+        # The self.pick_place_callback function will be executed upon a request.
         self.srv = self.create_service(
-            PickPlace, 
-            'pick_place_service', 
+            PickPlace,
+            'pick_place_service',
             self.pick_place_callback)
         self.get_logger().info('✅ Pick and Place service server is ready.')
 
     def pick_place_callback(self, request, response):
-        # 클라이언트로부터 받은 요청 데이터를 로그로 출력합니다.
+        """
+        Handle an incoming request to the PickPlace service.
+
+        This function is called whenever a client sends a request. It logs the
+        received coordinates and sends back a response indicating success.
+
+        Args:
+            request (PickPlace.Request): The request message from the client,
+                                         containing x, y, and z coordinates.
+            response (PickPlace.Response): The response message to be sent
+                                           back to the client.
+
+        Returns:
+            PickPlace.Response: The populated response object.
+        """
+        # Log the data received from the client.
         self.get_logger().info(
             f'Incoming request received: \n'
             f'  x: {request.x:.3f}\n'
             f'  y: {request.y:.3f}\n'
             f'  z: {request.z:.3f}'
         )
-        
-        # 여기에 실제로 로봇팔을 움직이거나 하는 로직을 추가할 수 있습니다.
-        # 지금은 성공적으로 받았다는 응답만 보내줍니다.
+
+        # Actual robot arm movement logic would be added here.
+        # For now, it just sends a successful response.
         response.success = True
         response.message = "Successfully received the coordinates."
-        
-        # 처리 결과를 클라이언트에게 반환합니다.
+
+        # Return the result to the client.
         return response
 
+
 def main(args=None):
+    """The main entry point for the ROS2 node."""
     rclpy.init(args=args)
     node = PickPlaceServerNode()
     try:
@@ -41,6 +80,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

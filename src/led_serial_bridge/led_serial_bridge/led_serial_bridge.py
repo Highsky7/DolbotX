@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# ROS2 → Arduino 시리얼 브리지 (LED 제어: "roka" | "enemy" | "none")
-#
-# - 구독: /led_control (std_msgs/String)
-# - 송신: "<cmd>\n" 을 시리얼로 전송  (cmd는 소문자화/트림)
-#
-# 안정화:
-#   * 포트 자동 재연결 (reopen_interval_ms)
-#   * DTR/RTS 끔(자동 리셋 최소화)
-#   * exclusive=True (Linux 중복오픈 방지)
-#   * debug_tx 옵션으로 송신 로그
+r"""
+ROS2 to Arduino Serial Bridge for LED Control.
+
+This node subscribes to a topic to receive LED control commands and sends them
+over a serial connection to an Arduino or similar microcontroller.
+
+- Subscribes to: /led_control (std_msgs/String)
+- Transmits: "<cmd>\n" over serial, where cmd is a lowercase, trimmed string.
+  (e.g., "roka", "enemy", "none")
+
+Stabilization Features:
+  * Automatic port reconnection (reopen_interval_ms).
+  * DTR/RTS disabled to minimize automatic resets on Arduinos.
+  * `exclusive=True` to prevent multiple processes from opening the port on Linux.
+  * `debug_tx` option for logging transmitted data.
+"""
 
 import time
 import threading
@@ -22,7 +28,17 @@ from serial import SerialException
 
 
 class LedSerialBridge(Node):
+    """
+    Act as a bridge between a ROS topic and a serial port for LED control.
+    """
+
     def __init__(self) -> None:
+        """
+        Initialize the LedSerialBridge node.
+
+        Declares parameters, sets up the ROS subscriber, and starts a timer
+        to periodically attempt to open the serial port.
+        """
         super().__init__('led_serial_bridge')
 
         # ---------- Parameters ----------
@@ -48,23 +64,33 @@ class LedSerialBridge(Node):
         # ---------- ROS I/O ----------
         self.create_subscription(String, self.topic, self.cb_led, 10)
 
-        # 주기적으로 포트 재오픈 시도
+        # Periodically attempt to reopen the port
         self.create_timer(self.reopen_interval_ms / 1000.0, self.try_open_timer)
 
-        # 최초 오픈 시도
+        # Initial open attempt
         self.try_open_timer()
 
-    # ===== ROS 콜백 =====
     def cb_led(self, msg: String) -> None:
-        # 앞/뒤 공백 제거, 소문자화
+        """
+        Receive a command from the /led_control topic and send it via serial.
+
+        Args:
+            msg (String): The message containing the command ('roka', 'enemy', or 'none').
+        """
+        # Trim whitespace and convert to lowercase
         cmd = (msg.data or '').strip().lower()
         if cmd not in ('roka', 'enemy', 'none'):
-            self.get_logger().warn(f"알 수 없는 LED 명령: '{msg.data}'. (허용: roka|enemy|none)")
+            self.get_logger().warn(f"Unknown LED command: '{msg.data}'. (Allowed: roka|enemy|none)")
             return
         self._send_line(cmd + '\n')
 
-    # ===== Serial Open/Close =====
     def try_open_timer(self) -> None:
+        """
+        Try to open the serial port periodically.
+
+        This allows the node to automatically reconnect if the device is unplugged
+        and plugged back in.
+        """
         if self._shutting_down:
             return
         with self._ser_lock:
@@ -76,24 +102,24 @@ class LedSerialBridge(Node):
                     self.baud,
                     timeout=0.05,
                     write_timeout=0.2,
-                    exclusive=True,   # Linux에서 포트 단일 점유
+                    exclusive=True,   # Ensure single access to the port on Linux
                 )
-                # 자동 리셋 최소화
+                # Minimize automatic resets on Arduino
                 try:
                     self._ser.dtr = False
                     self._ser.rts = False
                 except Exception:
                     pass
-                # 버퍼 비우기
+                # Clear buffers
                 try:
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
                 except Exception:
                     pass
 
-                self.get_logger().info(f'시리얼 오픈: {self.port} @ {self.baud}')
+                self.get_logger().info(f'Serial port opened: {self.port} @ {self.baud}')
 
-                # (선택) RX 로그 받고 싶으면 스레드 켜기
+                # Optional: Start a thread to read and log incoming serial data
                 if not self._rx_running:
                     self._rx_running = True
                     self._rx_thread = threading.Thread(target=self.rx_loop, daemon=True)
@@ -101,9 +127,10 @@ class LedSerialBridge(Node):
 
             except Exception as e:
                 self._ser = None
-                self.get_logger().warn(f'포트 오픈 실패: {e}')
+                self.get_logger().warn(f'Failed to open port: {e}')
 
     def close_serial(self) -> None:
+        """Safely close the serial port."""
         with self._ser_lock:
             if self._ser is not None:
                 try:
@@ -112,23 +139,32 @@ class LedSerialBridge(Node):
                     pass
             self._ser = None
 
-    # ===== TX/RX =====
     def _send_line(self, line: str) -> None:
+        """
+        Send a string over the serial port.
+
+        Args:
+            line (str): The string to send, which should end with a newline.
+        """
         with self._ser_lock:
             ser = self._ser
         if ser is None or not getattr(ser, 'is_open', False):
-            self.get_logger().warn('시리얼 미연결 상태—전송 건너뜀')
+            self.get_logger().warn('Serial not connected—skipping send')
             return
         try:
             ser.write(line.encode('ascii'))
             if self.debug_tx:
                 self.get_logger().info(f"TX: {line.strip()}")
         except Exception as e:
-            self.get_logger().error(f'전송 실패: {e}')
+            self.get_logger().error(f'Send failed: {e}')
             self.close_serial()
 
     def rx_loop(self) -> None:
-        # 아두이노가 print한 디버그 라인을 보고 싶을 때 유용
+        """
+        Read and log data from the serial port in a loop.
+
+        This is useful for viewing debug prints from the Arduino.
+        """
         buf = bytearray()
         while self._rx_running and not self._shutting_down:
             with self._ser_lock:
@@ -151,12 +187,12 @@ class LedSerialBridge(Node):
                         self.get_logger().info(f'RX: {line}')
             except (SerialException, OSError, ValueError) as e:
                 if not self._shutting_down:
-                    self.get_logger().warn(f'RX 에러: {e}')
+                    self.get_logger().warn(f'RX error: {e}')
                 self.close_serial()
                 time.sleep(0.1)
 
-    # ===== 종료 =====
     def shutdown(self) -> None:
+        """Clean up resources on node shutdown."""
         self._shutting_down = True
         self._rx_running = False
         self.close_serial()
@@ -164,6 +200,7 @@ class LedSerialBridge(Node):
 
 
 def main() -> None:
+    """Run the ROS2 node."""
     rclpy.init()
     node = LedSerialBridge()
     try:
