@@ -111,15 +111,15 @@ The robot's operation is modular and requires running several nodes in separate 
   ```
 - **Driving Camera (Logitech):**
   ```bash
-  ros2 run usb_cam usb_cam_node --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
+  ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera3 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_3.yaml
   ```
 - **Left Camera (Abko):**
   ```bash
-  ros2 run usb_cam usb_cam_node --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
+  ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera1 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_1.yaml
   ```
 - **Right Camera (Topsync):**
   ```bash
-  ros2 run usb_cam usb_cam_node --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
+  ros2 run usb_cam usb_cam_node_exe --ros-args --remap __ns:=/camera2 --params-file /home/nvidia/DolbotX/src/usb_cam/config/params_2.yaml
   ```
 - **RealSense Depth Camera:**
   ```bash
