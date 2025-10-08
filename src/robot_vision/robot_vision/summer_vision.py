@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: summer_vision.py
-# AUTHOR: Seungmin Lee
-# DESCRIPTION:
-# 이 노드는 로봇의 주행과 관련된 신호등과 보급상자 인식을 전담합니다.
-# [수정됨] 각 기능(신호등, 보급상자)이 독립적인 스레드 풀에서 동작하여
-# 한쪽 기능의 오류나 지연이 다른 기능에 영향을 주지 않도록 견고성이 향상되었습니다.
+"""
+ROS2 Node for Concurrent Traffic Light and Supply Box Detection.
+
+This node is responsible for two primary, independent vision tasks crucial for
+robot navigation and interaction: traffic light detection and supply box
+detection.
+
+To ensure robustness and prevent one task from blocking the other, this node
+employs two separate thread pools. One pool handles the traffic light detection
+from USB cameras, while the other manages supply box detection using a
+RealSense camera. This architecture ensures that a delay or error in one
+vision pipeline does not impact the performance of the other.
+"""
 
 import rclpy
 from rclpy.node import Node
@@ -33,21 +40,37 @@ import pyrealsense2 as rs2
 if (not hasattr(rs2, 'intrinsics')):
     import pyrealsense2.pyrealsense2 as rs2
 
+
 class TrafficSupplyRobustNode(Node):
+    """
+    A robust ROS2 node for handling traffic light and supply detection.
+
+    This class uses separate thread pools for traffic light and supply box
+    detection to ensure that the two independent tasks do not interfere with
+    each other, improving overall system robustness.
+    """
+
     def __init__(self):
+        """
+        Initialize the TrafficSupplyRobustNode.
+
+        This sets up parameters, loads models, creates publishers/subscribers,
+        initializes service clients, and prepares the separate thread pools
+        for the two distinct vision tasks.
+        """
         super().__init__('traffic_supply_robust_node')
         self.get_logger().info("--- [Robust] Traffic Light & Supply Box Detection Node ---")
-        
+
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
-        
+
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"Using device: {self.device}")
 
         self.use_half = self.device == 'cuda'
 
-        # 신호등 상태 기계 파라미터 선언
+        # Declare parameters for the traffic light state machine
         self.declare_parameter('red_light_min_area', 10000)
         self.declare_parameter('traffic_roi_top_ratio', 0.7)
         self.declare_parameter('red_light_confirmation_frames', 3)
@@ -63,12 +86,12 @@ class TrafficSupplyRobustNode(Node):
         self.TRAFFIC_LIGHT_CAMERA_ID = self.get_parameter('traffic_light_camera_id').get_parameter_value().string_value
         self.get_logger().info(f"Primary camera for traffic light detection: '{self.TRAFFIC_LIGHT_CAMERA_ID}'")
 
-        # 신호등 상태 정의
+        # Define states for the traffic light state machine
         self.STATE_CLEAR = 0
         self.STATE_CANDIDATE = 1
         self.STATE_CONFIRMED_RED = 2
 
-        # 카메라별 신호등 상태 추적기
+        # Tracker for traffic light state per camera
         self.red_light_tracker = {
             'cam1': {'state': self.STATE_CLEAR, 'confirmation_counter': 0, 'loss_counter': 0, 'last_center': None},
             'cam2': {'state': self.STATE_CLEAR, 'confirmation_counter': 0, 'loss_counter': 0, 'last_center': None}
@@ -79,7 +102,7 @@ class TrafficSupplyRobustNode(Node):
         self.proc_width = self.get_parameter('proc_width').get_parameter_value().integer_value
         self.proc_height = self.get_parameter('proc_height').get_parameter_value().integer_value
         
-        # --- [수정] 모델 로딩 분리 ---
+        # Separate model loading
         self.supply_model = None
         self.traffic_detection_model = None
         self.supply_model_ready = False
@@ -103,13 +126,12 @@ class TrafficSupplyRobustNode(Node):
             self.get_logger().info("✅ Traffic ONNX model loaded successfully.")
         except Exception as e:
             self.get_logger().error(f"Failed to load Traffic model: {e}. Traffic light detection will be disabled.")
-        # --- 수정 끝 ---
 
         self.intrinsics = None
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # 서비스 클라이언트 및 퍼블리셔 설정
+        # Setup service clients and publishers
         self.pick_place_client = self.create_client(PickPlace, '/pick_place_service')
         while not self.pick_place_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('pick_place service not available, waiting...')
@@ -126,17 +148,16 @@ class TrafficSupplyRobustNode(Node):
         self.resized_color_yolo = np.empty((self.proc_height, self.proc_width, 3), dtype=np.uint8)
         self.resized_depth = np.empty((self.proc_height, self.proc_width), dtype=np.uint16)
 
-        # --- [수정] 스레드 풀 분리 ---
+        # Separate thread pools for robustness
         self.supply_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='supply_worker')
         self.traffic_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='traffic_worker')
-        # --- 수정 끝 ---
         
         self._is_shutting_down = False
         
         self.stop_command_lock_until = None
         self.stop_command_duration = Duration(seconds=3.0)
 
-        # 구독자 설정
+        # Setup subscribers
         self.camera_info_sub = self.create_subscription(CameraInfo, "/camera/color/camera_info", self.camera_info_callback, 10)
         self.get_logger().info("Waiting for CameraInfo...")
 
@@ -144,6 +165,12 @@ class TrafficSupplyRobustNode(Node):
         self.usb_cam2_sub = self.create_subscription(CompressedImage, 'camera2/image_raw/compressed', lambda msg: self.usb_cam_callback(msg, 'cam2'), 10)
         
     def camera_info_callback(self, info_msg):
+        """
+        Receive and store camera intrinsic parameters.
+
+        Args:
+            info_msg (CameraInfo): The camera intrinsic information.
+        """
         if self.intrinsics is not None: return
         self.get_logger().info("✅ CameraInfo received.")
         self.intrinsics = rs2.intrinsics()
@@ -156,6 +183,7 @@ class TrafficSupplyRobustNode(Node):
         self.destroy_subscription(self.camera_info_sub)
 
     def initialize_image_sync(self):
+        """Initialize the synchronized subscribers for RealSense color and depth."""
         realsense_img_sub = message_filters.Subscriber(self, CompressedImage, '/camera/color/image_raw/compressed')
         depth_sub = message_filters.Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
         self.ts = message_filters.ApproximateTimeSynchronizer([realsense_img_sub, depth_sub], queue_size=5, slop=0.2)
@@ -163,10 +191,17 @@ class TrafficSupplyRobustNode(Node):
         self.get_logger().info("✅ Traffic & Supply Node initialized successfully.")
 
     def realsense_callback(self, compressed_image_msg, depth_msg):
+        """
+        Handle synchronized RealSense images and dispatch to the supply thread pool.
+
+        Args:
+            compressed_image_msg (CompressedImage): The color image message.
+            depth_msg (Image): The depth image message.
+        """
         if self.intrinsics is None or self._is_shutting_down: return
         if self.realsense_lock.acquire(blocking=False):
             try:
-                # [수정] 보급 상자 전용 스레드 풀 사용
+                # Use the dedicated supply thread pool
                 self.supply_executor.submit(self._process_realsense_data, compressed_image_msg, depth_msg)
             finally:
                 pass # The lock is released in the worker thread
@@ -174,11 +209,18 @@ class TrafficSupplyRobustNode(Node):
             self.get_logger().warn("Dropping a Realsense frame, processing is busy.", throttle_duration_sec=1)
 
     def usb_cam_callback(self, compressed_msg, camera_id):
+        """
+        Handle USB camera images and dispatch to the traffic thread pool.
+
+        Args:
+            compressed_msg (CompressedImage): The image message.
+            camera_id (str): The identifier ('cam1' or 'cam2').
+        """
         if self._is_shutting_down: return
         lock = self.usb_cam_locks[camera_id]
         if lock.acquire(blocking=False):
             try:
-                # [수정] 신호등 전용 스레드 풀 사용
+                # Use the dedicated traffic light thread pool
                 self.traffic_executor.submit(self._process_usb_cam_data, compressed_msg, camera_id)
             finally:
                  pass # The lock is released in the worker thread
@@ -186,7 +228,14 @@ class TrafficSupplyRobustNode(Node):
             self.get_logger().warn(f"Dropping a frame from {camera_id}, processing is busy.", throttle_duration_sec=1)
 
     def _process_realsense_data(self, compressed_image_msg, depth_msg):
-        # [수정] 모델이 준비되지 않았으면 바로 반환
+        """
+        Process a RealSense frame for supply box detection in a worker thread.
+
+        Args:
+            compressed_image_msg (CompressedImage): The color image message.
+            depth_msg (Image): The depth image message.
+        """
+        # Return early if the model isn't ready
         if not self.supply_model_ready:
             self.realsense_lock.release()
             return
@@ -209,6 +258,13 @@ class TrafficSupplyRobustNode(Node):
             self.realsense_lock.release()
     
     def _process_usb_cam_data(self, compressed_msg, camera_id):
+        """
+        Process a USB camera frame for traffic light detection in a worker thread.
+
+        Args:
+            compressed_msg (CompressedImage): The image message.
+            camera_id (str): The identifier of the camera that sent the image.
+        """
         lock = self.usb_cam_locks[camera_id]
         try:
             np_arr = np.frombuffer(compressed_msg.data, np.uint8)
@@ -217,7 +273,7 @@ class TrafficSupplyRobustNode(Node):
 
             annotated_image = cv_image.copy()
 
-            # [수정] 모델이 준비되었고, 지정된 카메라인 경우에만 신호등 로직 처리
+            # Only process traffic light logic if the model is ready and it's the designated camera
             if self.traffic_model_ready and camera_id == self.TRAFFIC_LIGHT_CAMERA_ID:
                 tracker = self.red_light_tracker[camera_id]
                 results_traffic = self.traffic_detection_model(cv_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
@@ -241,7 +297,7 @@ class TrafficSupplyRobustNode(Node):
                             break
                     if best_red_candidate_center is not None: break
                 
-                # 상태 기계(State Machine) 로직
+                # State Machine Logic
                 red_light_detected_in_frame = False
                 if best_red_candidate_center is not None:
                     if tracker['last_center'] is None or \
@@ -272,7 +328,7 @@ class TrafficSupplyRobustNode(Node):
                     else:
                         tracker['loss_counter'] = 0
 
-                # 최종 명령 발행
+                # Publish final command
                 command_to_publish = "stop" if tracker['state'] == self.STATE_CONFIRMED_RED else "go" if green_found else None
                 if command_to_publish:
                     self.traffic_pub.publish(String(data=command_to_publish))
@@ -288,6 +344,18 @@ class TrafficSupplyRobustNode(Node):
             lock.release()
 
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image, header):
+        """
+        Run the supply tracking pipeline on a single RealSense frame.
+
+        Args:
+            color_image_to_draw (np.ndarray): The original color image to draw on.
+            resized_depth_image (np.ndarray): The depth image, resized.
+            yolo_input_image (np.ndarray): The color image, resized for the model.
+            header: The message header containing the timestamp.
+
+        Returns:
+            bool: True if a supply was detected in this frame, False otherwise.
+        """
         if self.intrinsics is None: return False
         
         results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
@@ -353,6 +421,12 @@ class TrafficSupplyRobustNode(Node):
         return supply_found_this_frame
 
     def pick_place_response_callback(self, future):
+        """
+        Handle the response from the PickPlace service call.
+
+        Args:
+            future: The future object containing the service response.
+        """
         try:
             response = future.result()
             if response.success:
@@ -364,6 +438,13 @@ class TrafficSupplyRobustNode(Node):
             self.service_call_in_progress = False
 
     def publish_compressed_viz(self, publisher, cv_image):
+        """
+        Publish an OpenCV image as a compressed ROS message.
+
+        Args:
+            publisher (Publisher): The publisher to use.
+            cv_image (np.ndarray): The image to be published.
+        """
         msg = CompressedImage(format="jpeg")
         msg.header.stamp = self.get_clock().now().to_msg()
         success, encoded_image = cv2.imencode('.jpg', cv_image)
@@ -372,6 +453,16 @@ class TrafficSupplyRobustNode(Node):
             publisher.publish(msg)
 
     def draw_traffic_detections(self, image, results):
+        """
+        Draw bounding boxes for traffic light detections on an image.
+
+        Args:
+            image (np.ndarray): The image to draw on.
+            results: The YOLO detection results for traffic lights.
+
+        Returns:
+            np.ndarray: The annotated image.
+        """
         for r in results:
             for box in r.boxes.cpu().numpy():
                 cls_id = int(box.cls[0])
@@ -384,15 +475,16 @@ class TrafficSupplyRobustNode(Node):
         return image
 
     def destroy_node(self):
+        """Cleanly shut down the node and its resources."""
         self.get_logger().info("Shutting down the thread pools.")
         self._is_shutting_down = True
-        # --- [수정] 두 개의 스레드 풀 모두 종료 ---
+        # Shut down both thread pools
         self.supply_executor.shutdown(wait=True)
         self.traffic_executor.shutdown(wait=True)
-        # --- 수정 끝 ---
         super().destroy_node()
 
 def main(args=None):
+    """The main entry point for the node."""
     rclpy.init(args=args)
     node = TrafficSupplyRobustNode()
     try:

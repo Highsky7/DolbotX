@@ -1,9 +1,27 @@
+/**
+ * @file RIGHT_MOTOR_FINAL.ino
+ * @brief Control sketch for the RIGHT side motors of the DolbotX robot.
+ *
+ * This sketch is a counterpart to `LEFT_MOTOR_FINAL.ino` and is designed for
+ * controlling the three motors on the right side of the robot.
+ *
+ * Features:
+ * - Controls three motors based on a single encoder (M4).
+ * - Receives target velocity for the right side via serial command ("VR<velocity>\n").
+ * - Implements a PID control loop to manage motor speed.
+ * - Includes a command timeout (watchdog) to stop motors if no command is received.
+ * - Applies an Exponential Moving Average (EMA) filter to the RPM reading for stability.
+ *
+ * Serial Command Format: "VR <velocity_mps>\n"
+ * Example: "VR 0.5\n"
+ */
+
 #include <MsTimer2.h>
 #include <math.h>
-#include <util/atomic.h> // ATOMIC_BLOCK 사용을 위해 헤더 파일 추가
+#include <util/atomic.h> // Header for using ATOMIC_BLOCK
 
-// === 핀 정의 (Pin Definitions) ===
-// 우측 모터
+// === Pin Definitions ===
+// Right Side Motors
 #define M4_PWM 2
 #define M4_DIR 3
 #define M4_ENC_A 18
@@ -16,43 +34,43 @@
 #define start_pin5 30
 #define start_pin6 32
 
-// === 상수 정의 (Constants) ===
+// === Constants ===
 #define PULSES_PER_REV 324
-#define CONTROL_MS 20 // 제어 주기 [ms]
+#define CONTROL_MS 20 // Control loop period [ms]
 const double dt_s = CONTROL_MS / 1000.0;
-const double GEAR_RATIO = 1.0 / 71.0;     // 기어비 (모터→휠)
-const double WHEEL_DIAM = 0.135;          // 휠 지름 [m]
-const double WHEEL_CIRC = M_PI * WHEEL_DIAM; // 휠 원주 [m]
+const double GEAR_RATIO = 1.0 / 71.0;     // Gear ratio (motor->wheel)
+const double WHEEL_DIAM = 0.135;          // Wheel diameter [m]
+const double WHEEL_CIRC = M_PI * WHEEL_DIAM; // Wheel circumference [m]
 
-// === PID 게인 ===
-// 우측 모터 (M4, M5, M6)
+// === PID Gains ===
+// Right side motors (M4, M5, M6)
 const float KP = 3.0;
 const float KI = 2.9;
 const float KD = 0.0;
 const double I_MAX = 3000.0;
 
-// === 전역 변수 (Global Variables) ===
+// === Global Variables ===
 volatile long encR = 0;
-// 시리얼 통신으로 목표 속도를 저장할 변수
+// Variable to store target velocity from serial communication
 float vel_right_Sub = 0.0;
 float integral_R = 0.0f, prevErr_R = 0.0f;
 volatile bool flag_Control = false;
-volatile bool velReceived = false; // 명령 수신 여부 플래그
+volatile bool velReceived = false; // Flag to indicate if a command has been received
 
-// ★ 추가: 워치독(명령 타임아웃)
-unsigned long lastCmdMs = 0;                  // 마지막 유효 명령 수신 시각(ms)
-const unsigned long CMD_TIMEOUT_MS = 300;     // 타임아웃 임계값
+// ★ ADDED: Watchdog (command timeout)
+unsigned long lastCmdMs = 0;                  // Time of last valid command reception (ms)
+const unsigned long CMD_TIMEOUT_MS = 300;     // Timeout threshold
 
-// ★ 추가: RPM 저역통과(EMA)
+// ★ ADDED: RPM Low-pass filter (EMA)
 double wheelRPM_R_filt = 0.0;
-const double RPM_ALPHA = 0.3;                 // 0~1, 클수록 빠른 추종(노이즈↑)
+const double RPM_ALPHA = 0.3;                 // 0~1, higher value means faster tracking (more noise)
 
-// 논블로킹 시리얼 수신을 위한 버퍼
+// Buffer for non-blocking serial reception
 const int SERIAL_BUFFER_SIZE = 64;
 char serialBuffer[SERIAL_BUFFER_SIZE];
 int bufferIndex = 0;
 
-// 인터럽트, 타이머 (Interrupts, Timers) - 우측 모터 전용
+// Interrupts, Timers - Right motor only
 void ISR_Right() {
   if (digitalRead(M4_ENC_B) == LOW) encR--;
   else encR++;
@@ -62,39 +80,46 @@ void onTimer() {
   flag_Control = true;
 }
 
-// 시리얼 데이터 파싱 함수 (예: "VR 0.5\n")
+/**
+ * @brief Parses serial data (e.g., "VR 0.5\n").
+ */
 void parseSerial() {
   while (Serial.available() > 0) {
     char incomingChar = Serial.read();
 
     if (incomingChar == '\n') {
-      serialBuffer[bufferIndex] = '\0'; // 문자열 종료
+      serialBuffer[bufferIndex] = '\0'; // Null-terminate the string
 
-      // "VR" (Velocity Right)로 시작하는지 확인
+      // Check if it starts with "VR" (Velocity Right)
       if (strncmp(serialBuffer, "VR", 2) == 0) {
-        // "VR" 다음의 숫자 부분을 float으로 변환
+        // Convert the numeric part after "VR" to float
         vel_right_Sub = atof(serialBuffer + 2);
-        velReceived = true; // 유효한 명령 수신 완료
+        velReceived = true; // Valid command received
 
-        // ★ 추가: 워치독 갱신 + PID 상태 리셋
+        // ★ ADDED: Update watchdog + reset PID state
         lastCmdMs = millis();
         integral_R = 0.0f;
         prevErr_R = 0.0f;
       }
 
-      bufferIndex = 0; // 버퍼 초기화
+      bufferIndex = 0; // Reset buffer
     } 
     else {
       if (bufferIndex < SERIAL_BUFFER_SIZE - 1) {
         serialBuffer[bufferIndex++] = incomingChar;
       } else {
-        bufferIndex = 0; // 버퍼 오버플로우 방지
+        bufferIndex = 0; // Prevent buffer overflow
       }
     }
   }
 }
 
-// 모터 드라이브 (Motor Drive function)
+/**
+ * @brief Drives a single motor.
+ * @param pwmPin The PWM pin.
+ * @param dirPin The direction pin.
+ * @param cmd The command value (magnitude for PWM, sign for direction).
+ */
 void driveMotor(int pwmPin, int dirPin, double cmd) {
   int pwm = (int)round(fabs(cmd));
   if (pwm > 250) pwm = 250;
@@ -103,7 +128,17 @@ void driveMotor(int pwmPin, int dirPin, double cmd) {
   analogWrite(pwmPin, pwm);
 }
 
-// PID 계산 (PID Calculation)
+/**
+ * @brief Calculates PID control output.
+ * @param target The target setpoint.
+ * @param current The current measured value.
+ * @param integral Reference to the integral term.
+ * @param prevErr Reference to the previous error term.
+ * @param Kp Proportional gain.
+ * @param Ki Integral gain.
+ * @param Kd Derivative gain.
+ * @return The PID command value.
+ */
 double PID(double target, double current, float& integral, float& prevErr, const float Kp, const float Ki, const float Kd) {
   double error = target - current;
   integral += error * dt_s;
@@ -116,7 +151,7 @@ double PID(double target, double current, float& integral, float& prevErr, const
 void setup() {
   Serial.begin(57600);
   
-  // 우측 핀 설정
+  // Configure pins for the right side
   pinMode(M4_ENC_A, INPUT_PULLUP);
   pinMode(M4_ENC_B, INPUT_PULLUP);
   pinMode(M4_PWM, OUTPUT); pinMode(M4_DIR, OUTPUT);
@@ -125,15 +160,15 @@ void setup() {
   pinMode(start_pin4, OUTPUT); pinMode(start_pin5, OUTPUT);
   pinMode(start_pin6, OUTPUT);
 
-  // 인터럽트 연결
+  // Attach interrupt
   attachInterrupt(digitalPinToInterrupt(M4_ENC_A), ISR_Right, RISING);
   
-  // 우측 드라이버 활성화
+  // Enable right side drivers
   digitalWrite(start_pin4, HIGH); 
   digitalWrite(start_pin5, HIGH);
   digitalWrite(start_pin6, HIGH);
 
-  // 시작 전 모터 정지
+  // Stop motors before starting
   driveMotor(M4_PWM, M4_DIR, 0);
   
   MsTimer2::set(CONTROL_MS, onTimer);
@@ -141,10 +176,10 @@ void setup() {
 }
 
 void loop() {
-  // 시리얼 포트에서 들어오는 명령을 계속 확인
+  // Continuously check for incoming serial commands
   parseSerial();
 
-  // ★ 추가: 워치독(타임아웃) — 유효 명령 전/타임아웃 시 정지
+  // ★ ADDED: Watchdog (timeout) - Stop if no command received or timeout
   if (!velReceived || (millis() - lastCmdMs) > CMD_TIMEOUT_MS) {
     driveMotor(M4_PWM, M4_DIR, 0);
     driveMotor(M5_PWM, M5_DIR, 0);
@@ -152,53 +187,52 @@ void loop() {
     return;
   }
   
-  // 타이머 주기에 맞춰 제어 루프 실행
+  // Execute control loop based on timer period
   if (!flag_Control) return;
   flag_Control = false;
 
-  // ATOMIC_BLOCK을 사용하여 인터럽트 충돌 없이 안전하게 변수 읽기
+  // Safely read the encoder value using an atomic block
   long cntR;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
     cntR = encR;
     encR = 0;
   }
 
-  // 목표 속도(m/s)를 바퀴 RPM으로 변환
+  // Convert target velocity (m/s) to wheel RPM
   double targetRPM_R = vel_right_Sub * 60.0 / WHEEL_CIRC;
 
-  // 엔코더 펄스 값을 모터 RPM으로 변환
+  // Convert encoder pulses to motor RPM
   double motorRPM_R = (cntR / (double)PULSES_PER_REV) * (60.0 / dt_s);
   
-  // 모터 RPM을 바퀴 RPM으로 변환
+  // Convert motor RPM to wheel RPM
   double wheelRPM_R = motorRPM_R * GEAR_RATIO;
 
-  // 현재 실제 속도(m/s) 계산 (디버깅용)
+  // Calculate current actual velocity in m/s (for debugging)
   double actual_vel_right = wheelRPM_R * WHEEL_CIRC / 60.0;
 
-  // ★ 추가: RPM 저역통과(EMA) 적용 후 PID 입력으로 사용
+  // ★ ADDED: Apply EMA low-pass filter to RPM before using in PID
   wheelRPM_R_filt = RPM_ALPHA * wheelRPM_R + (1.0 - RPM_ALPHA) * wheelRPM_R_filt;
 
-  // PID 제어값 계산 (필터된 RPM 사용)
+  // Calculate PID control value (using filtered RPM)
   double cmdR = PID(targetRPM_R, wheelRPM_R_filt, integral_R, prevErr_R, KP, KI, KD);
 
-  // 목표 속도가 매우 낮을 경우 모터 정지 (Deadzone)
+  // Stop motor if target velocity is very low (Deadzone)
   if (fabs(vel_right_Sub) <= 0.05) {
     cmdR = 0;
-    // 정지 명령 시 적분항을 리셋하여 다음 출발 시 오버슈팅 방지
+    // Reset integral term on stop command to prevent overshoot on next start
     integral_R = 0.0f;
   }
 
-  // PWM 출력값 제한
+  // Limit PWM output value
   cmdR = constrain(cmdR, -250, 250);
 
-  // 우측 모터 3개에 제어 신호 인가
+  // Apply control signal to all three right side motors
   driveMotor(M4_PWM, M4_DIR,  cmdR);
   driveMotor(M5_PWM, M5_DIR, -cmdR);
   driveMotor(M6_PWM, M6_DIR, -cmdR);
 
-  // === 디버깅을 위한 시리얼 플로터 출력 ===
-  // Serial.print(vel_right_Sub); Serial.print(" ");       // 우측 목표 속도
-  // Serial.print(actual_vel_right); Serial.print(" ");     // 우측 실제 속도(m/s)
-  // Serial.println(cmdR);                                  // 제어 출력(PWM 근사)
+  // === Serial plotter output for debugging ===
+  // Serial.print(vel_right_Sub); Serial.print(" ");       // Right target velocity
+  // Serial.print(actual_vel_right); Serial.print(" ");     // Right actual velocity (m/s)
+  // Serial.println(cmdR);                                  // Control output (PWM approximation)
 }
-

@@ -56,7 +56,10 @@ namespace usb_cam
 
 using utils::io_method_t;
 
-
+/**
+ * @brief Represents a USB camera, providing an interface to configure,
+ * start, stop, and capture frames from a V4L2 device.
+ */
 UsbCam::UsbCam()
 : m_device_name(), m_io(io_method_t::IO_METHOD_MMAP), m_fd(-1),
   m_number_of_buffers(4), m_buffers(new usb_cam::utils::buffer[m_number_of_buffers]), m_image(),
@@ -65,21 +68,26 @@ UsbCam::UsbCam()
   m_epoch_time_shift_us(usb_cam::utils::get_epoch_time_shift_us()), m_supported_formats()
 {}
 
+/**
+ * @brief Destructor for the UsbCam class. Ensures that the camera is properly shut down.
+ */
 UsbCam::~UsbCam()
 {
   shutdown();
 }
 
-
-/// @brief Fill destination image with source image. If required, convert a given
-/// V4L2 Image into another type. Look up possible V4L2 pixe formats in the
-/// `linux/videodev2.h` header file.
-/// @param src a pointer to a V4L2 source image
-/// @param dest a pointer to where the source image should be copied (if required)
-/// @param bytes_used number of bytes used by the src buffer
+/**
+ * @brief Processes a raw image buffer from the V4L2 device.
+ *
+ * If the pixel format requires conversion (e.g., from YUYV to RGB), this
+ * function performs the conversion. Otherwise, it performs a direct memory copy.
+ *
+ * @param src A pointer to the raw V4L2 source image buffer.
+ * @param dest A reference to a pointer where the processed image data will be stored.
+ * @param bytes_used The number of bytes used by the source buffer.
+ */
 void UsbCam::process_image(const char * src, char * & dest, const int & bytes_used)
 {
-  // TODO(flynneva): could we skip the copy here somehow?
   // If no conversion required, just copy the image from V4L2 buffer
   if (m_image.pixel_format->requires_conversion() == false) {
     memcpy(dest, src, m_image.size_in_bytes);
@@ -88,6 +96,14 @@ void UsbCam::process_image(const char * src, char * & dest, const int & bytes_us
   }
 }
 
+/**
+ * @brief Reads a single frame from the camera device based on the configured I/O method.
+ *
+ * This function handles the different I/O methods (READ, MMAP, USERPTR) to
+ * dequeue a buffer from the driver, process it, and then re-queue it for future use.
+ *
+ * @throws std::runtime_error if there is an error reading or processing the frame.
+ */
 void UsbCam::read_frame()
 {
   struct v4l2_buffer buf;
@@ -179,6 +195,11 @@ void UsbCam::read_frame()
   }
 }
 
+/**
+ * @brief Stops the video capturing stream.
+ *
+ * @throws std::runtime_error if the stream cannot be stopped.
+ */
 void UsbCam::stop_capturing()
 {
   if (!m_is_capturing) {return;}
@@ -204,6 +225,13 @@ void UsbCam::stop_capturing()
   }
 }
 
+/**
+ * @brief Starts the video capturing stream.
+ *
+ * This function queues the buffers and starts the video stream, depending on the I/O method.
+ *
+ * @throws std::runtime_error if the stream cannot be started or buffers cannot be queued.
+ */
 void UsbCam::start_capturing()
 {
   if (m_is_capturing) {return;}
@@ -265,11 +293,19 @@ void UsbCam::start_capturing()
   m_is_capturing = true;
 }
 
+/**
+ * @brief Uninitializes the device, freeing the allocated buffers.
+ */
 void UsbCam::uninit_device()
 {
   m_buffers.reset();
 }
 
+/**
+ * @brief Initializes the device for the READ I/O method.
+ *
+ * @throws std::overflow_error if memory cannot be allocated.
+ */
 void UsbCam::init_read()
 {
   if (!m_buffers) {
@@ -283,6 +319,15 @@ void UsbCam::init_read()
   }
 }
 
+/**
+ * @brief Initializes the device for the MMAP I/O method.
+ *
+ * This function requests buffers from the device, queries their status, and
+ * maps them into the process's address space.
+ *
+ * @throws std::runtime_error if the device does not support MMAP or if any V4L2 ioctl fails.
+ * @throws std::overflow_error if memory cannot be allocated.
+ */
 void UsbCam::init_mmap()
 {
   struct v4l2_requestbuffers req;
@@ -334,6 +379,15 @@ void UsbCam::init_mmap()
   }
 }
 
+/**
+ * @brief Initializes the device for the USERPTR I/O method.
+ *
+ * This function requests buffers from the device and allocates user-space
+ * memory for them.
+ *
+ * @throws std::invalid_argument if the device does not support user pointer I/O.
+ * @throws std::overflow_error if memory cannot be allocated.
+ */
 void UsbCam::init_userp()
 {
   struct v4l2_requestbuffers req;
@@ -371,6 +425,16 @@ void UsbCam::init_userp()
   }
 }
 
+/**
+ * @brief Initializes the camera device.
+ *
+ * This function queries the device capabilities, sets the desired image format
+ * and framerate, and initializes the buffers based on the configured I/O method.
+ *
+ * @throws std::invalid_argument if the device is not a valid V4L2 device or
+ *         lacks required capabilities.
+ * @throws std::runtime_error on various V4L2 ioctl failures.
+ */
 void UsbCam::init_device()
 {
   struct v4l2_capability cap;
@@ -452,8 +516,6 @@ void UsbCam::init_device()
     throw "V4L2_CAP_TIMEPERFRAME not supported";
   }
 
-  // TODO(lucasw) need to get list of valid numerator/denominator pairs
-  // and match closest to what user put in.
   stream_params.parm.capture.timeperframe.numerator = 1;
   stream_params.parm.capture.timeperframe.denominator = m_framerate;
   if (usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_S_PARM), &stream_params) < 0) {
@@ -476,6 +538,11 @@ void UsbCam::init_device()
   }
 }
 
+/**
+ * @brief Closes the device file descriptor.
+ *
+ * @throws std::runtime_error if close() fails.
+ */
 void UsbCam::close_device()
 {
   // Device is already closed
@@ -488,6 +555,11 @@ void UsbCam::close_device()
   m_fd = -1;
 }
 
+/**
+ * @brief Opens the device file descriptor.
+ *
+ * @throws std::runtime_error if stat() or open() fail.
+ */
 void UsbCam::open_device()
 {
   struct stat st;
@@ -507,6 +579,13 @@ void UsbCam::open_device()
   }
 }
 
+/**
+ * @brief Configures the camera with the specified parameters.
+ *
+ * @param parameters A struct containing all configuration parameters like device name,
+ *                   image dimensions, framerate, and pixel format.
+ * @param io_method The I/O method to use (MMAP, READ, or USERPTR).
+ */
 void UsbCam::configure(
   parameters_t & parameters, const io_method_t & io_method)
 {
@@ -529,11 +608,17 @@ void UsbCam::configure(
   init_device();
 }
 
+/**
+ * @brief A convenience function to start the capturing process.
+ */
 void UsbCam::start()
 {
   start_capturing();
 }
 
+/**
+ * @brief Shuts down the camera, stopping capture, uninitializing, and closing the device.
+ */
 void UsbCam::shutdown()
 {
   stop_capturing();
@@ -541,8 +626,11 @@ void UsbCam::shutdown()
   close_device();
 }
 
-/// @brief Grab new image from V4L2 device, return pointer to image
-/// @return pointer to image data
+/**
+ * @brief Grabs a new image from the V4L2 device.
+ *
+ * @return A pointer to the internal image data buffer.
+ */
 char * UsbCam::get_image()
 {
   if ((m_image.width == 0) || (m_image.height == 0)) {
@@ -553,8 +641,11 @@ char * UsbCam::get_image()
   return m_image.data;
 }
 
-/// @brief Overload get_image so users can pass in an image pointer to fill
-/// @param destination destination to fill in with image
+/**
+ * @brief Grabs a new image and copies it into a user-provided buffer.
+ *
+ * @param destination A pointer to the destination buffer where the image data will be copied.
+ */
 void UsbCam::get_image(char * destination)
 {
   if ((m_image.width == 0) || (m_image.height == 0)) {
@@ -566,6 +657,11 @@ void UsbCam::get_image(char * destination)
   grab_image();
 }
 
+/**
+ * @brief Queries the device for all supported formats, resolutions, and frame rates.
+ *
+ * @return A vector of `capture_format_t` structs, each describing a supported format.
+ */
 std::vector<capture_format_t> UsbCam::get_supported_formats()
 {
   m_supported_formats.clear();
@@ -614,6 +710,13 @@ std::vector<capture_format_t> UsbCam::get_supported_formats()
   return m_supported_formats;
 }
 
+/**
+ * @brief Waits for a frame to become available and then reads it.
+ *
+ * Uses `select()` to wait for the device file descriptor to become ready for reading.
+ *
+ * @throws std::runtime_error if `select()` fails or times out.
+ */
 void UsbCam::grab_image()
 {
   fd_set fds;
@@ -647,7 +750,12 @@ void UsbCam::grab_image()
   read_frame();
 }
 
-// enables/disables auto focus
+/**
+ * @brief Enables or disables the camera's auto focus.
+ *
+ * @param value 1 to enable auto focus, 0 to disable.
+ * @return true if the operation was successful, false otherwise.
+ */
 bool UsbCam::set_auto_focus(int value)
 {
   struct v4l2_queryctrl queryctrl;
@@ -681,11 +789,12 @@ bool UsbCam::set_auto_focus(int value)
 }
 
 /**
-* Set video device parameter via call to v4l-utils.
-*
-* @param param The name of the parameter to set
-* @param param The value to assign
-*/
+ * @brief Set a V4L2 parameter using the v4l2-ctl command-line utility.
+ *
+ * @param param The name of the parameter to set (e.g., 'focus_auto').
+ * @param value The integer value to assign to the parameter.
+ * @return true on success, false on failure.
+ */
 bool UsbCam::set_v4l_parameter(const std::string & param, int value)
 {
   char buf[33];
@@ -694,11 +803,12 @@ bool UsbCam::set_v4l_parameter(const std::string & param, int value)
 }
 
 /**
-* Set video device parameter via call to v4l-utils.
-*
-* @param param The name of the parameter to set
-* @param param The value to assign
-*/
+ * @brief Set a V4L2 parameter using the v4l2-ctl command-line utility.
+ *
+ * @param param The name of the parameter to set (e.g., 'focus_auto').
+ * @param value The string value to assign to the parameter.
+ * @return true on success, false on failure.
+ */
 bool UsbCam::set_v4l_parameter(const std::string & param, const std::string & value)
 {
   int retcode = 0;

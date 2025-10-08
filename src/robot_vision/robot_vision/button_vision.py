@@ -1,5 +1,28 @@
 #!/usr/bin/env python3
-"""Button detection node using button_color.onnx to report distances via PickPlace service."""
+"""
+ROS2 Node for Colored Button Detection and 3D Localization.
+
+This node uses a RealSense camera and a YOLO object detection model to find
+colored buttons ('blue', 'green', 'yellow'). Upon detecting a button, it
+calculates its 3D position in the robot's coordinate frame.
+
+When a button is detected within a specific Z-height range, it calls a
+`PickPlace` service with the button's 3D coordinates. This is used to
+trigger a robotic arm or other actuator. The node includes throttling to
+prevent spamming the service.
+
+It subscribes to:
+- `/camera/color/image_raw/compressed`: The color image stream.
+- `/camera/aligned_depth_to_color/image_raw`: The depth image, aligned to the color frame.
+- `/camera/color/camera_info`: Camera intrinsic parameters.
+
+It publishes:
+- `/button_vision/viz/compressed`: A visualization image with detections.
+- `/supply_command`: A command string when a service call is made.
+
+It acts as a client for:
+- `/pick_place_service`: A service to send the 3D coordinates of a detected button.
+"""
 
 import threading
 from dataclasses import dataclass
@@ -38,7 +61,21 @@ BUTTON_CLASS_COLORS = {
 
 @dataclass
 class SupplyDetectionResult:
-    """Container describing a single detection and its 3D localisation."""
+    """
+    Container describing a single detection and its 3D localization.
+
+    Attributes:
+        found (bool): Whether a valid detection was made.
+        confidence (float): The confidence score of the detection.
+        class_id (Optional[int]): The class ID of the detected object.
+        resized_bbox (Optional[Tuple[int, int, int, int]]): The bounding box
+            coordinates (x1, y1, x2, y2) in the resized processing image.
+        original_bbox (Optional[Tuple[int, int, int, int]]): The bounding box
+            coordinates scaled back to the original image dimensions.
+        position (Optional[np.ndarray]): The 3D position (x, y, z) of the
+            object in the target TF frame.
+        depth_m (Optional[float]): The depth of the object in meters.
+    """
 
     found: bool
     confidence: float = 0.0
@@ -54,8 +91,17 @@ class SupplyTransformError(RuntimeError):
 
 
 def _select_best_box(results: Sequence, expected_class: int) -> Optional[object]:
-    """Return the highest confidence box for the desired class."""
+    """
+    Return the highest confidence box for the desired class from YOLO results.
 
+    Args:
+        results (Sequence): The output from a YOLO model prediction.
+        expected_class (int): The integer class ID to search for.
+
+    Returns:
+        Optional[object]: The box object with the highest confidence for the
+                          specified class, or None if no such box is found.
+    """
     if not results:
         return None
 
@@ -83,8 +129,33 @@ def compute_supply_detection(
     target_frame_id: str = "camera_bottom_screw_frame",
     expected_class: int = 0,
 ) -> SupplyDetectionResult:
-    """Compute the 3D pose of the best detection for a given class."""
+    """
+    Compute the 3D pose of the best detection for a given class.
 
+    This function finds the best bounding box for the `expected_class`,
+    extracts the depth at its center, deprojects the 2D pixel to a 3D point
+    in the camera's frame, and then transforms that point into the
+    `target_frame_id`.
+
+    Args:
+        results (Sequence): The YOLO model's output.
+        depth_image (np.ndarray): The depth image corresponding to the results.
+        intrinsics (rs2.intrinsics): The camera's intrinsic parameters.
+        proc_width (int): The width of the processed image.
+        proc_height (int): The height of the processed image.
+        header_stamp: The timestamp from the image message header.
+        tf_buffer (tf2_ros.Buffer): The TF buffer for coordinate transforms.
+        optical_frame_id (str): The TF frame of the camera's optical center.
+        target_frame_id (str): The target TF frame for the final position.
+        expected_class (int): The class ID to look for.
+
+    Returns:
+        SupplyDetectionResult: A data object containing the results of the
+                               computation.
+
+    Raises:
+        SupplyTransformError: If the TF lookup fails.
+    """
     if intrinsics is None:
         return SupplyDetectionResult(found=False)
 
@@ -164,9 +235,16 @@ def compute_supply_detection(
 
 
 class ButtonVisionNode(Node):
-    """Detects colored buttons and sends their 3D positions via PickPlace service."""
+    """
+    Detects colored buttons and sends their 3D positions via PickPlace service.
+
+    This class sets up the ROS2 node, loads the ML model, subscribes to camera
+    topics, and creates a service client. It processes incoming frames to find
+    buttons and trigger actions.
+    """
 
     def __init__(self) -> None:
+        """Initialize the ButtonVisionNode."""
         super().__init__('button_vision_node')
         self.get_logger().info('--- Button Vision Node initialising ---')
 
@@ -220,11 +298,21 @@ class ButtonVisionNode(Node):
         self._is_shutting_down = False
 
     def destroy_node(self) -> bool:
+        """Shut down the node cleanly."""
         self._is_shutting_down = True
         return super().destroy_node()
 
-    # Camera info handling -------------------------------------------------
     def camera_info_callback(self, info_msg: CameraInfo) -> None:
+        """
+        Receive camera intrinsics and initialize the rest of the node.
+
+        This callback is triggered once, then the subscription is destroyed.
+        It sets up the `pyrealsense2.intrinsics` object and then calls
+        `initialize_sync` to start the main processing loop.
+
+        Args:
+            info_msg (CameraInfo): The camera info message.
+        """
         if self.intrinsics is not None:
             return
 
@@ -246,14 +334,24 @@ class ButtonVisionNode(Node):
         self.destroy_subscription(self.camera_info_sub)
 
     def initialize_sync(self) -> None:
+        """Initialize the synchronized subscribers for color and depth images."""
         color_sub = message_filters.Subscriber(self, CompressedImage, '/camera/color/image_raw/compressed')
         depth_sub = message_filters.Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
         self.sync = message_filters.ApproximateTimeSynchronizer([color_sub, depth_sub], queue_size=5, slop=0.15)
         self.sync.registerCallback(self.realsense_callback)
         self.get_logger().info('✅ Button vision synchronizer initialised.')
 
-    # Frame processing -----------------------------------------------------
     def realsense_callback(self, compressed_image_msg: CompressedImage, depth_msg: Image) -> None:
+        """
+        Handle synchronized color and depth image messages.
+
+        This is the main entry point for frame processing. It uses a lock to
+        prevent concurrent processing of frames.
+
+        Args:
+            compressed_image_msg (CompressedImage): The compressed color image.
+            depth_msg (Image): The depth image.
+        """
         if not self.button_model_ready or self.intrinsics is None or self._is_shutting_down:
             return
 
@@ -267,6 +365,17 @@ class ButtonVisionNode(Node):
             self.processing_lock.release()
 
     def _process_frame(self, compressed_image_msg: CompressedImage, depth_msg: Image) -> None:
+        """
+        Process a single pair of color and depth frames.
+
+        Decodes images, resizes them, runs the YOLO model, computes 3D
+        positions for each detected button class, and triggers visualization
+        and service calls.
+
+        Args:
+            compressed_image_msg (CompressedImage): The compressed color image.
+            depth_msg (Image): The depth image.
+        """
         np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
         color_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         depth_image_raw = self.bridge.imgmsg_to_cv2(depth_msg, '16UC1')
@@ -303,8 +412,15 @@ class ButtonVisionNode(Node):
 
         self.publish_viz_image(annotated_image)
 
-    # Drawing & publishing -------------------------------------------------
     def draw_detection(self, annotated_image: np.ndarray, detection: SupplyDetectionResult, class_name: str) -> None:
+        """
+        Draw bounding boxes and labels on the visualization image.
+
+        Args:
+            annotated_image (np.ndarray): The image to draw on.
+            detection (SupplyDetectionResult): The detection result to draw.
+            class_name (str): The name of the detected class.
+        """
         if detection.original_bbox is None or detection.position is None:
             return
 
@@ -320,6 +436,12 @@ class ButtonVisionNode(Node):
         cv2.putText(annotated_image, label, (x1, max(y1 - 10, 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     def publish_viz_image(self, image: np.ndarray) -> None:
+        """
+        Publish the annotated image for visualization.
+
+        Args:
+            image (np.ndarray): The image to publish.
+        """
         msg = CompressedImage()
         msg.format = 'jpeg'
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -328,8 +450,19 @@ class ButtonVisionNode(Node):
             msg.data = encoded_image.tobytes()
             self.viz_pub.publish(msg)
 
-    # Service handling -----------------------------------------------------
     def maybe_call_service(self, class_name: str, detection: SupplyDetectionResult) -> None:
+        """
+        Check conditions and potentially call the PickPlace service.
+
+        A service call is made if:
+        - The detection's Z coordinate is within the configured range.
+        - Enough time has passed since the last call for this button class.
+        - A call for this class is not already in progress.
+
+        Args:
+            class_name (str): The name of the detected button class.
+            detection (SupplyDetectionResult): The result of the detection.
+        """
         if detection.position is None:
             return
 
@@ -363,6 +496,15 @@ class ButtonVisionNode(Node):
         )
 
     def service_response_callback(self, class_name: str, future) -> None:
+        """
+        Handle the response from the PickPlace service call.
+
+        Logs the result and resets the 'in_progress' flag for that class.
+
+        Args:
+            class_name (str): The class name the call was for.
+            future: The future object containing the service response.
+        """
         try:
             response = future.result()
             if response.success:
@@ -376,6 +518,7 @@ class ButtonVisionNode(Node):
 
 
 def main(args=None) -> None:
+    """Entry point for the button_vision_node."""
     rclpy.init(args=args)
     node = ButtonVisionNode()
     try:

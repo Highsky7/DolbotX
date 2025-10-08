@@ -39,6 +39,13 @@ const char BASE_TOPIC_NAME[] = "image_raw";
 namespace usb_cam
 {
 
+/**
+ * @brief The ROS2 node that acts as a driver for V4L2 cameras.
+ *
+ * This class wraps the UsbCam class into a ROS2 node, handling parameter
+ * loading, ROS publishers and subscribers, service calls, and the main
+ * image capture loop.
+ */
 UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
 : Node("usb_cam", node_options),
   m_camera(new usb_cam::UsbCam()),
@@ -76,7 +83,7 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("contrast", -1);    // 0-255, -1 "leave alone"
   this->declare_parameter("saturation", -1);  // 0-255, -1 "leave alone"
   this->declare_parameter("sharpness", -1);   // 0-255, -1 "leave alone"
-  this->declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
+  this.declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
   this->declare_parameter("auto_white_balance", true);
   this->declare_parameter("white_balance", 4000);
   this->declare_parameter("autoexposure", true);
@@ -92,6 +99,12 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
       std::placeholders::_1));
 }
 
+/**
+ * @brief Destructor for the UsbCamNode.
+ *
+ * Cleans up all resources, including camera object, messages, publishers,
+ * services, and timers.
+ */
 UsbCamNode::~UsbCamNode()
 {
   RCLCPP_WARN(this->get_logger(), "Shutting down");
@@ -106,6 +119,13 @@ UsbCamNode::~UsbCamNode()
   delete (m_camera);
 }
 
+/**
+ * @brief Service callback to start or stop capturing images.
+ *
+ * @param request_header The ROS service request header.
+ * @param request The service request, containing a boolean to start (true) or stop (false).
+ * @param response The service response, indicating success and a message.
+ */
 void UsbCamNode::service_capture(
   const std::shared_ptr<rmw_request_id_t> request_header,
   const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
@@ -121,6 +141,15 @@ void UsbCamNode::service_capture(
   }
 }
 
+/**
+ * @brief Resolves a device path, handling symbolic links.
+ *
+ * If the provided path is a symbolic link, this function reads the link to
+ * find the canonical path of the actual device file.
+ *
+ * @param path The device path to resolve (e.g., "/dev/video0").
+ * @return The resolved, canonical path to the device.
+ */
 std::string resolve_device_path(const std::string & path)
 {
   if (std::filesystem::is_symlink(path)) {
@@ -137,6 +166,13 @@ std::string resolve_device_path(const std::string & path)
   return path;
 }
 
+/**
+ * @brief Initializes the camera node.
+ *
+ * This function performs the main setup, including loading camera info,
+ * checking for the V4L2 device, configuring and starting the camera, and
+ * setting up the main timer for image capture.
+ */
 void UsbCamNode::init()
 {
   while (m_parameters.frame_id == "") {
@@ -214,8 +250,6 @@ void UsbCamNode::init()
   // start the camera
   m_camera->start();
 
-  // TODO(lucasw) should this check a little faster than expected frame rate?
-  // TODO(lucasw) how to do small than ms, or fractional ms- std::chrono::nanoseconds?
   const int period_ms = 1000.0 / m_parameters.framerate;
   m_timer = this->create_wall_timer(
     std::chrono::milliseconds(static_cast<int64_t>(period_ms)),
@@ -223,6 +257,9 @@ void UsbCamNode::init()
   RCLCPP_INFO_STREAM(this->get_logger(), "Timer triggering every " << period_ms << " ms");
 }
 
+/**
+ * @brief Get parameters from the ROS parameter server.
+ */
 void UsbCamNode::get_params()
 {
   auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(this);
@@ -238,6 +275,11 @@ void UsbCamNode::get_params()
   assign_params(parameters);
 }
 
+/**
+ * @brief Assign a vector of ROS parameters to the internal parameters struct.
+ *
+ * @param parameters A vector of `rclcpp::Parameter` objects to assign.
+ */
 void UsbCamNode::assign_params(const std::vector<rclcpp::Parameter> & parameters)
 {
   for (auto & parameter : parameters) {
@@ -291,8 +333,12 @@ void UsbCamNode::assign_params(const std::vector<rclcpp::Parameter> & parameters
   }
 }
 
-/// @brief Send current parameters to V4L2 device
-/// TODO(flynneva): should this actuaully be part of UsbCam class?
+/**
+ * @brief Sets V4L2 camera parameters based on the node's parameters.
+ *
+ * This function iterates through the configured parameters (brightness, contrast, etc.)
+ * and sets them on the camera device using the `set_v4l_parameter` method.
+ */
 void UsbCamNode::set_v4l2_params()
 {
   // set camera parameters
@@ -359,6 +405,11 @@ void UsbCamNode::set_v4l2_params()
   }
 }
 
+/**
+ * @brief Captures an image, populates a standard `Image` message, and publishes it.
+ *
+ * @return true if the image was successfully captured and sent, false otherwise.
+ */
 bool UsbCamNode::take_and_send_image()
 {
   // Only resize if required
@@ -388,6 +439,13 @@ bool UsbCamNode::take_and_send_image()
   return true;
 }
 
+/**
+ * @brief Captures an image, populates a `CompressedImage` message, and publishes it.
+ *
+ * This function is used when the pixel format is 'mjpeg'.
+ *
+ * @return true if the image was successfully captured and sent, false otherwise.
+ */
 bool UsbCamNode::take_and_send_image_mjpeg()
 {
   // Only resize if required
@@ -411,6 +469,12 @@ bool UsbCamNode::take_and_send_image_mjpeg()
   return true;
 }
 
+/**
+ * @brief Callback for dynamic parameter updates.
+ *
+ * @param parameters A vector of parameters that have been changed.
+ * @return A result object indicating if the update was successful.
+ */
 rcl_interfaces::msg::SetParametersResult UsbCamNode::parameters_callback(
   const std::vector<rclcpp::Parameter> & parameters)
 {
@@ -424,6 +488,12 @@ rcl_interfaces::msg::SetParametersResult UsbCamNode::parameters_callback(
   return result;
 }
 
+/**
+ * @brief The main update loop, called by a timer.
+ *
+ * This function checks if the camera is capturing and, if so, calls the
+ * appropriate function to capture and publish an image.
+ */
 void UsbCamNode::update()
 {
   if (m_camera->is_capturing()) {

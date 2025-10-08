@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# FILE: unitree_tracker.py
-# AUTHOR: Seungmin Lee
-# DESCRIPTION:
-# Intel RealSense D435i 카메라와 unitree_go2.onnx YOLO 모델을 사용하여
-# 객체를 탐지하고, 해당 객체의 3D 좌표를 계산합니다.
-# 계산된 좌표는 'camera_color_optical_frame'에서 'camera_bottom_screw_frame'으로
-# TF 변환된 후, ROS 2 토픽 '/target_xy'로 발행됩니다.
-# vision_nofilter.py의 TF 변환 방식을 적용하였습니다.
+"""
+ROS2 Node for 3D Object Tracking using YOLO and RealSense.
+
+This node uses an Intel RealSense D435i camera and a 'unitree_go2.onnx'
+YOLO model to detect a target object. It calculates the object's 3D coordinates
+in the camera's optical frame and then transforms these coordinates into the
+'camera_bottom_screw_frame' using the TF2 library.
+
+The final transformed coordinates are published to the '/target_xy' topic as a
+`geometry_msgs/msg/Point` message. The node also publishes a compressed image
+topic for visualization.
+"""
 
 import rclpy
 from rclpy.node import Node
@@ -21,35 +25,95 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 
 from sensor_msgs.msg import Image, CameraInfo, CompressedImage
-from geometry_msgs.msg import Point, PointStamped # PointStamped 추가
+from geometry_msgs.msg import Point, PointStamped
 from cv_bridge import CvBridge
 
-# ## MODIFICATION START: TF2 관련 라이브러리 임포트 ##
 import tf2_ros
 from tf2_geometry_msgs import do_transform_point
-# ## MODIFICATION END ##
 
 
-# pyrealsense2 라이브러리 임포트
 import pyrealsense2 as rs2
 if (not hasattr(rs2, 'intrinsics')):
     import pyrealsense2.pyrealsense2 as rs2
 
+
 class YoloObjectLocatorNode(Node):
+    """
+    Detects and localizes a target object in 3D space using YOLO and depth data.
+    """
+
     def __init__(self):
+        """
+        Initialize the YoloObjectLocatorNode.
+
+        This sets up the node, loads the YOLO model, initializes TF2, and
+        creates the necessary publishers and subscribers for image processing
+        and coordinate publishing.
+        """
+        super().__init__('yolo_object_locator_node_tf')
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+ROS2 Node for 3D Object Tracking using YOLO and RealSense.
+
+This node uses an Intel RealSense D435i camera and a 'unitree_go2.onnx'
+YOLO model to detect a target object. It calculates the object's 3D coordinates
+in the camera's optical frame and then transforms these coordinates into the
+'camera_bottom_screw_frame' using the TF2 library.
+
+The final transformed coordinates are published to the '/target_xy' topic as a
+`geometry_msgs/msg/Point` message. The node also publishes a compressed image
+topic for visualization.
+"""
+
+import rclpy
+from rclpy.node import Node
+import cv2
+import numpy as np
+import torch
+from ultralytics import YOLO
+import message_filters
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+import threading
+
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
+from geometry_msgs.msg import Point, PointStamped
+from cv_bridge import CvBridge
+
+import tf2_ros
+from tf2_geometry_msgs import do_transform_point
+
+
+import pyrealsense2 as rs2
+if (not hasattr(rs2, 'intrinsics')):
+    import pyrealsense2.pyrealsense2 as rs2
+
+
+class YoloObjectLocatorNode(Node):
+    """
+    Detects and localizes a target object in 3D space using YOLO and depth data.
+    """
+    def __init__(self):
+        """
+        Initialize the YoloObjectLocatorNode.
+
+        This sets up the node, loads the YOLO model, initializes TF2, and
+        creates the necessary publishers and subscribers for image processing
+        and coordinate publishing.
+        """
         super().__init__('yolo_object_locator_node_tf')
         self.get_logger().info("--- YOLO Object Locator Node for unitree_go2 (with TF Transformation) ---")
 
-        # 동시성 제어를 위한 Lock 객체
+        # Lock object for concurrency control
         self.processing_lock = threading.Lock()
 
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"Using device: {self.device}")
         
-        # ONNX 모델 로드
+        # Load the ONNX model
         try:
-            # 사용할 ONNX 모델 경로 파라미터 선언
             self.declare_parameter('model_path', './unitree_go2.onnx')
             model_path = self.get_parameter('model_path').get_parameter_value().string_value
             self.model = YOLO(model_path, task='detect')
@@ -59,40 +123,40 @@ class YoloObjectLocatorNode(Node):
             self.destroy_node()
             return
 
-        # 카메라 내부 파라미터(Intrinsics) 저장을 위한 변수
+        # Variable to store camera intrinsic parameters
         self.intrinsics = None
         self.camera_info_sub = None
         
-        # ## MODIFICATION START: TF 버퍼 및 리스너 초기화 ##
+        # Initialize TF buffer and listener
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        # ## MODIFICATION END ##
 
-        # 처리 성능을 위한 이미지 크기 파라미터
+        # Image processing size parameters for performance
         self.declare_parameter('proc_width', 640)
         self.declare_parameter('proc_height', 480)
         self.proc_width = self.get_parameter('proc_width').get_parameter_value().integer_value
         self.proc_height = self.get_parameter('proc_height').get_parameter_value().integer_value
 
-        # 결과 발행을 위한 Publisher 생성
-        # 토픽명: /target_xy, 메시지 타입: geometry_msgs/msg/Point
+        # Publisher for the target's 3D coordinates
         self.target_pub = self.create_publisher(Point, '/target_xy', 10)
         
-        # 시각화 이미지 발행을 위한 Publisher
+        # Publisher for the visualization image
         self.viz_pub = self.create_publisher(CompressedImage, '/yolo_locator/viz/compressed', 10)
 
         self.yolo_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
 
-        # RealSense 카메라 정보 토픽 구독
-        # CameraInfo 메시지를 한 번만 받아서 내부 파라미터를 설정하고 구독을 해제합니다.
+        # Subscribe to the RealSense camera info topic to get intrinsics once
         info_topic = "/camera/color/camera_info"
         self.camera_info_sub = self.create_subscription(CameraInfo, info_topic, self.camera_info_callback, 10)
         self.get_logger().info(f"Waiting for CameraInfo on topic: {info_topic}")
 
     def camera_info_callback(self, info_msg):
         """
-        카메라 정보 콜백 함수. 카메라 내부 파라미터를 한 번만 수신하여 저장합니다.
+        Receive camera intrinsic parameters once and store them.
+
+        Args:
+            info_msg (CameraInfo): The message containing camera intrinsics.
         """
         if self.intrinsics is not None:
             return
@@ -116,10 +180,10 @@ class YoloObjectLocatorNode(Node):
 
             self.intrinsics.coeffs = [i for i in info_msg.d]
             
-            # 카메라 정보 수신 완료 후, 이미지 동기화 콜백 등록
+            # After receiving camera info, set up the synchronized image callback
             self.initialize_image_sync()
 
-            # 카메라 정보 구독 해제
+            # Unsubscribe from the camera info topic
             if self.camera_info_sub:
                 self.destroy_subscription(self.camera_info_sub)
                 self.camera_info_sub = None
@@ -128,13 +192,11 @@ class YoloObjectLocatorNode(Node):
             self.get_logger().error(f"Error in camera_info_callback: {e}")
 
     def initialize_image_sync(self):
-        """
-        컬러 이미지와 깊이 이미지를 동기화하여 수신하기 위한 message_filters 설정
-        """
+        """Set up message_filters to synchronize color and depth images."""
         realsense_img_sub = message_filters.Subscriber(self, CompressedImage, '/camera/color/image_raw/compressed')
         depth_sub = message_filters.Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
         
-        # ApproximateTimeSynchronizer: 거의 비슷한 타임스탬프를 가진 메시지들을 묶어줍니다.
+        # Use ApproximateTimeSynchronizer to group messages with similar timestamps
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [realsense_img_sub, depth_sub], queue_size=10, slop=0.1
         )
@@ -143,12 +205,16 @@ class YoloObjectLocatorNode(Node):
 
     def image_callback(self, compressed_image_msg, depth_msg):
         """
-        동기화된 이미지 메시지를 받았을 때 호출되는 메인 콜백 함수
+        Main callback for synchronized image messages.
+
+        Args:
+            compressed_image_msg (CompressedImage): The compressed color image message.
+            depth_msg (Image): The depth image message.
         """
         if self.intrinsics is None or self._is_shutting_down:
             return
 
-        # 이전 프레임 처리가 아직 진행 중이면 현재 프레임은 건너뜁니다.
+        # If the previous frame is still being processed, skip the current one
         if self.processing_lock.acquire(blocking=False):
             try:
                 self.yolo_executor.submit(self._process_images, compressed_image_msg, depth_msg)
@@ -160,10 +226,15 @@ class YoloObjectLocatorNode(Node):
 
     def _process_images(self, compressed_image_msg, depth_msg):
         """
-        YOLO 추론과 좌표 계산 및 TF 변환을 수행하는 핵심 로직 (별도 스레드에서 실행됨)
+        Core logic for YOLO inference, coordinate calculation, and TF transform.
+        This runs in a separate thread.
+
+        Args:
+            compressed_image_msg (CompressedImage): The compressed color image message.
+            depth_msg (Image): The depth image message.
         """
         try:
-            # 1. 이미지 디코딩 및 변환
+            # 1. Decode and convert images
             np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
             cv_color = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             cv_depth_raw = self.bridge.imgmsg_to_cv2(depth_msg, '16UC1')
@@ -172,16 +243,16 @@ class YoloObjectLocatorNode(Node):
                 self.get_logger().warn("Failed to decode image. Skipping frame.")
                 return
 
-            # 시각화용 이미지 복사
+            # Copy image for visualization
             viz_image = cv_color.copy()
 
-            # YOLO 입력용으로 이미지 리사이즈
+            # Resize color image for YOLO input
             resized_color_yolo = cv2.resize(cv_color, (self.proc_width, self.proc_height), interpolation=cv2.INTER_AREA)
 
-            # 2. YOLO 모델 추론 수행
+            # 2. Run YOLO model inference
             results = self.model(resized_color_yolo, verbose=False, device=self.device)
 
-            # 3. 가장 신뢰도 높은 객체 찾기
+            # 3. Find the object with the highest confidence
             best_box = None
             max_conf = 0.0
             for box in results[0].boxes:
@@ -189,7 +260,7 @@ class YoloObjectLocatorNode(Node):
                     max_conf = box.conf[0]
                     best_box = box
 
-            # 4. 객체가 검출된 경우 좌표 계산 및 발행
+            # 4. If an object is detected, calculate and publish its coordinates
             if best_box is not None:
                 x1, y1, x2, y2 = map(int, best_box.xyxy[0])
                 cx_res, cy_res = (x1 + x2) // 2, (y1 + y2) // 2
@@ -203,11 +274,11 @@ class YoloObjectLocatorNode(Node):
                     depth_in_mm = cv_depth_raw[orig_cy, orig_cx]
                     
                     if depth_in_mm > 0:
-                        # 5. 2D 픽셀 좌표 -> 3D 공간 좌표 (카메라 광학 프레임 기준)
+                        # 5. Deproject 2D pixel to 3D point (relative to camera optical frame)
                         deprojected = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [orig_cx, orig_cy], depth_in_mm)
                         optical_frame_coords = np.array([p / 1000.0 for p in deprojected])
                         
-                        # ## MODIFICATION START: TF 변환 로직 ##
+                        # TF Transformation Logic
                         point_in_optical_frame = PointStamped()
                         point_in_optical_frame.header.frame_id = "camera_color_optical_frame"
                         point_in_optical_frame.header.stamp = compressed_image_msg.header.stamp
@@ -230,17 +301,17 @@ class YoloObjectLocatorNode(Node):
                             ])
                         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
                             self.get_logger().warn(f"Coordinate transform failed: {e}", throttle_duration_sec=5.0)
-                            return # 변환 실패 시 함수 종료
+                            return # Exit function on transform failure
                         
                         if transformed_position is not None:
-                            # 6. /target_xy 토픽으로 변환된 좌표(Point) 메시지 발행
+                            # 6. Publish the transformed coordinates as a Point message
                             target_point_msg = Point()
                             target_point_msg.x = transformed_position[0]
                             target_point_msg.y = transformed_position[1]
                             target_point_msg.z = transformed_position[2]
                             self.target_pub.publish(target_point_msg)
 
-                            # 7. 시각화: 바운딩 박스 및 변환된 좌표 정보 그리기
+                            # 7. Draw bounding box and transformed coordinates for visualization
                             orig_x1, orig_y1 = int(x1 * scale_w), int(y1 * scale_h)
                             orig_x2, orig_y2 = int(x2 * scale_w), int(y2 * scale_h)
                             
@@ -248,20 +319,22 @@ class YoloObjectLocatorNode(Node):
                             cv2.rectangle(viz_image, (orig_x1, orig_y1), (orig_x2, orig_y2), (0, 255, 0), 2)
                             cv2.putText(viz_image, label, (orig_x1, orig_y1 - 10), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        # ## MODIFICATION END ##
             
-            # 시각화 이미지 발행
+            # Publish the visualization image
             self.publish_compressed_viz(viz_image)
 
         except Exception as e:
             self.get_logger().error(f"Error in image processing worker: {e}\n{traceback.format_exc()}")
         finally:
-            # 작업 완료 후 Lock 해제
+            # Release the lock after processing is complete
             self.processing_lock.release()
 
     def publish_compressed_viz(self, cv_image):
         """
-        시각화 이미지를 JPEG 형식으로 압축하여 발행하는 함수
+        Publish the visualization image as a compressed JPEG.
+
+        Args:
+            cv_image (np.ndarray): The image to be published.
         """
         msg = CompressedImage()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -272,15 +345,15 @@ class YoloObjectLocatorNode(Node):
             self.viz_pub.publish(msg)
 
     def destroy_node(self):
-        """
-        노드 종료 시 스레드 풀을 안전하게 종료
-        """
+        """Safely shut down the node and its thread pool."""
         self.get_logger().info("Shutting down the thread pool.")
         self._is_shutting_down = True
         self.yolo_executor.shutdown(wait=True)
         super().destroy_node()
 
+
 def main(args=None):
+    """Main entry point for the ROS2 node."""
     rclpy.init(args=args)
     node = YoloObjectLocatorNode()
     try:
@@ -290,6 +363,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

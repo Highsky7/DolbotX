@@ -1,15 +1,30 @@
 #!/usr/env/bin python3
 # -*- coding: utf-8 -*-
-# FILE: onnx_multi_traffic_supply.py
-# AUTHOR: Guido (Optimized for Real-time Distributed Systems)
-# REFINED BY: Hinton (for Robust State Integration & Logic Correction)
-# DESCRIPTION:
-# ... (설명 생략) ...
-# 14. [Hinton's Update V2 for Stop Condition] 'supply_command' 발행 조건 변경.
-#     - 기존의 유클리드 거리(distance) 기반 정지 조건을
-#       카메라 기준 Z축 좌표(transformed_position[2]) 기반으로 변경.
-#     - z 값이 -0.1m ~ 0.4m 범위에 있을 때 'stop' 명령을 발행하도록 수정하여
-#       작업 거리를 더욱 정밀하게 제어.
+"""
+ROS2 Node for Unified, Multi-Camera, Multi-Object Vision Processing.
+
+This node serves as a central hub for processing data from three different
+cameras (1x RealSense, 2x USB) to perform three distinct vision tasks
+concurrently using a multi-threaded architecture.
+
+Tasks:
+1.  **Supply Tracking (RealSense):** Detects a target object, calculates its
+    3D position using color and depth data, and calls a `PickPlace` service
+    when the object is within a specific Z-distance range.
+2.  **Marker Detection (USB Cams):** Detects 'ROKA' and 'Enemy' markers to
+    control an LED status indicator.
+3.  **Traffic Light Detection (USB Cams):** Detects red and green traffic
+    lights to publish 'stop' and 'go' commands. It includes a confirmation
+    mechanism to robustly detect red lights across multiple frames.
+
+Architecture:
+- Uses a ThreadPoolExecutor to process frames from all three cameras in parallel.
+- Employs non-blocking locks to prevent frame processing queues from backing up.
+- Uses `message_filters` to synchronize color and depth frames from the
+  RealSense camera.
+- Leverages TF2 for coordinate transformations to determine object positions
+  relative to the robot's base.
+"""
 
 import rclpy
 from rclpy.node import Node
@@ -36,26 +51,47 @@ import pyrealsense2 as rs2
 if (not hasattr(rs2, 'intrinsics')):
     import pyrealsense2.pyrealsense2 as rs2
 
+
 class YoloVisionNode(Node):
+    """
+    Manages and orchestrates the multi-camera, multi-model vision tasks.
+
+    This class initializes all models, parameters, publishers, subscribers,
+    and the threading infrastructure required to run the vision pipeline.
+    """
+
     def __init__(self):
+        """
+        Initialize the YoloVisionNode.
+
+        This involves:
+        - Setting up locks for concurrent camera processing.
+        - Loading three separate YOLO models (supply, marker, traffic).
+        - Declaring and retrieving ROS2 parameters for tuning detection logic.
+        - Creating publishers for status, commands, and visualizations.
+        - Creating a client for the PickPlace service.
+        - Setting up TF2 for coordinate transforms.
+        - Initializing subscribers for all three cameras, starting with a
+          one-time subscription to get the RealSense camera's intrinsics.
+        """
         super().__init__('yolo_traffic_node_no_qos_optimized')
         self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V4) ---")
-        
+
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
-        
+
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.get_logger().info(f"PyTorch detected device: {self.device}. ONNX Runtime will use best provider.")
 
-        self.use_half = self.device == 'cuda'        
+        self.use_half = self.device == 'cuda'
         if self.use_half:
             self.get_logger().info("FP16 inference is enabled for CUDA device.")
 
         self.declare_parameter('red_light_min_area', 100)
         self.declare_parameter('traffic_roi_top_ratio', 0.6)
         self.declare_parameter('red_light_confirmation_frames', 3)
-        self.declare_parameter('red_light_tracking_tolerance', 50) 
+        self.declare_parameter('red_light_tracking_tolerance', 50)
         self.RED_LIGHT_MIN_AREA = self.get_parameter('red_light_min_area').get_parameter_value().integer_value
         self.TRAFFIC_ROI_TOP_RATIO = self.get_parameter('traffic_roi_top_ratio').get_parameter_value().double_value
         self.RED_LIGHT_CONFIRMATION_FRAMES = self.get_parameter('red_light_confirmation_frames').get_parameter_value().integer_value
@@ -73,10 +109,10 @@ class YoloVisionNode(Node):
 
         self.declare_parameter('detection_threshold', 5)
         self.declare_parameter('tracking_tolerance', 0.2)
-        
+
         self.DETECTION_THRESHOLD = self.get_parameter('detection_threshold').get_parameter_value().integer_value
         self.TRACKING_TOLERANCE = self.get_parameter('tracking_tolerance').get_parameter_value().double_value
-        
+
         self.detection_counter = 0
         self.last_detected_position = None
 
@@ -121,7 +157,7 @@ class YoloVisionNode(Node):
 
         self.yolo_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='yolo_worker')
         self._is_shutting_down = False
-        
+
         info_topic = "/camera/color/camera_info"
         self.camera_info_sub = self.create_subscription(CameraInfo, info_topic, self.camera_info_callback, 10)
         self.get_logger().info(f"Waiting for CameraInfo on topic: {info_topic}")
@@ -130,13 +166,23 @@ class YoloVisionNode(Node):
         self.usb_cam1_sub = self.create_subscription(
             CompressedImage, usb_cam1_topic, lambda msg: self.usb_cam_callback(msg, 'cam1'), 10)
         self.get_logger().info(f"Subscribing to USB Camera 1 on topic: {usb_cam1_topic}")
-        
+
         usb_cam2_topic = 'camera2/image_raw/compressed'
         self.usb_cam2_sub = self.create_subscription(
             CompressedImage, usb_cam2_topic, lambda msg: self.usb_cam_callback(msg, 'cam2'), 10)
         self.get_logger().info(f"Subscribing to USB Camera 2 on topic: {usb_cam2_topic}")
-        
+
     def camera_info_callback(self, info_msg):
+        """
+        Receive and store camera intrinsic parameters.
+
+        This callback is triggered once to get the camera intrinsics, which are
+        essential for 3D calculations. After receiving the info, it destroys
+        its own subscription and initializes the main image message filter sync.
+
+        Args:
+            info_msg (CameraInfo): The camera intrinsic information.
+        """
         if self.intrinsics is not None: return
         self.get_logger().info("✅ CameraInfo received.")
         self.intrinsics = rs2.intrinsics()
@@ -151,6 +197,7 @@ class YoloVisionNode(Node):
         self.get_logger().info("CameraInfo subscription destroyed. Starting image synchronization.")
 
     def initialize_image_sync(self):
+        """Initialize the synchronized subscribers for RealSense color and depth."""
         realsense_img_sub = message_filters.Subscriber(self, CompressedImage, '/camera/color/image_raw/compressed')
         depth_sub = message_filters.Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
         self.ts = message_filters.ApproximateTimeSynchronizer([realsense_img_sub, depth_sub], queue_size=5, slop=0.2)
@@ -158,6 +205,16 @@ class YoloVisionNode(Node):
         self.get_logger().info("✅ YOLO Vision Node initialized successfully.")
 
     def realsense_callback(self, compressed_image_msg, depth_msg):
+        """
+        Handle synchronized color and depth images from the RealSense camera.
+
+        Uses a non-blocking lock to offload the processing task to a worker
+        thread, preventing the callback from being blocked.
+
+        Args:
+            compressed_image_msg (CompressedImage): The color image message.
+            depth_msg (Image): The depth image message.
+        """
         if self.intrinsics is None or self._is_shutting_down: return
         if self.realsense_lock.acquire(blocking=False):
             try:
@@ -169,6 +226,16 @@ class YoloVisionNode(Node):
             self.get_logger().warn("Dropping a Realsense frame, previous frame still processing.", throttle_duration_sec=1)
 
     def usb_cam_callback(self, compressed_msg, camera_id):
+        """
+        Handle image messages from the USB cameras.
+
+        Uses a non-blocking lock to offload the processing task to a worker
+        thread for the specific camera.
+
+        Args:
+            compressed_msg (CompressedImage): The image message.
+            camera_id (str): The identifier ('cam1' or 'cam2').
+        """
         if self._is_shutting_down: return
         lock = self.usb_cam_locks[camera_id]
         if lock.acquire(blocking=False):
@@ -181,15 +248,22 @@ class YoloVisionNode(Node):
             self.get_logger().warn(f"Dropping a frame from {camera_id}, previous frame still processing.", throttle_duration_sec=1)
 
     def _process_realsense_data(self, compressed_image_msg, depth_msg):
+        """
+        Process a single RealSense frame in a worker thread for supply tracking.
+
+        Args:
+            compressed_image_msg (CompressedImage): The color image message.
+            depth_msg (Image): The depth image message.
+        """
         try:
             np_arr = np.frombuffer(compressed_image_msg.data, np.uint8)
             cv_color = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             cv_depth_raw = self.bridge.imgmsg_to_cv2(depth_msg, '16UC1')
             if cv_color is None or cv_depth_raw is None: self.get_logger().warn("Failed to decompress. Skip."); return
-            
+
             cv2.resize(cv_depth_raw, (self.proc_width, self.proc_height), dst=self.resized_depth, interpolation=cv2.INTER_NEAREST)
             cv2.resize(cv_color, (self.proc_width, self.proc_height), dst=self.resized_color_yolo, interpolation=cv2.INTER_AREA)
-            
+
             color_image_to_draw = cv_color.copy()
             supply_detected = self.run_supply_tracking(color_image_to_draw, self.resized_depth, self.resized_color_yolo, compressed_image_msg.header)
             self.status_pub.publish(Bool(data=supply_detected))
@@ -198,14 +272,21 @@ class YoloVisionNode(Node):
             self.get_logger().error(f"Error in Realsense worker: {e}\n{traceback.format_exc()}")
         finally:
             self.realsense_lock.release()
-            
+
     def _process_usb_cam_data(self, compressed_msg, camera_id):
+        """
+        Process a single USB camera frame for marker and traffic light detection.
+
+        Args:
+            compressed_msg (CompressedImage): The image message.
+            camera_id (str): The identifier of the camera that sent the image.
+        """
         lock = self.usb_cam_locks[camera_id]
         try:
             np_arr = np.frombuffer(compressed_msg.data, np.uint8)
             cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if cv_image is None: self.get_logger().warn(f"Failed to decompress USB cam image from {camera_id}."); return
-            
+
             h, w, _ = cv_image.shape
             tracker = self.red_light_tracker[camera_id]
 
@@ -216,28 +297,28 @@ class YoloVisionNode(Node):
                     label = self.marker_class_names[int(box.cls[0])]
                     if label == 'ROKA': roka_found = True
                     elif label == 'Enemy': enemy_found = True
-            
+
             led_data = "roka" if roka_found else "enemy" if enemy_found else "none"
             self.led_pub.publish(String(data=led_data))
-            
+
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
-            
+
             results_traffic = self.traffic_detection_model(annotated_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
             red_found, green_found = False, False
-            
+
             best_red_candidate_center = None
 
             for r in results_traffic:
                 for box_data in r.boxes.cpu().numpy():
                     label = self.traffic_model_class_names[int(box_data.cls[0])]
-                    
+
                     if label == 'green':
                         green_found = True
                         continue
 
                     if label == 'red':
                         if box_data.conf[0] < 0.7: continue
-                        
+
                         box = box_data.xyxy[0].astype(int)
                         box_w = box[2] - box[0]; box_h = box[3] - box[1]
 
@@ -245,11 +326,11 @@ class YoloVisionNode(Node):
 
                         cy = (box[1] + box[3]) / 2
                         if cy > h * self.TRAFFIC_ROI_TOP_RATIO: continue
-                        
+
                         current_center = np.array([ (box[0] + box[2]) / 2, cy ])
                         if best_red_candidate_center is None:
                              best_red_candidate_center = current_center
-            
+
             if best_red_candidate_center is not None:
                 if tracker['last_center'] is not None and \
                    np.linalg.norm(best_red_candidate_center - tracker['last_center']) < self.RED_LIGHT_TRACKING_TOLERANCE:
@@ -267,12 +348,12 @@ class YoloVisionNode(Node):
             command_to_publish = None
             if red_found:
                 command_to_publish = "stop"
-            elif green_found: 
+            elif green_found:
                 command_to_publish = "go"
 
             if command_to_publish is not None:
                 self.traffic_pub.publish(String(data=command_to_publish))
-            
+
             annotated_image = self.draw_traffic_detections(annotated_image, results_traffic)
             viz_publisher = self.usb_cam1_viz_pub if camera_id == 'cam1' else self.usb_cam2_viz_pub
             self.publish_compressed_viz(viz_publisher, annotated_image)
@@ -283,6 +364,12 @@ class YoloVisionNode(Node):
             lock.release()
 
     def pick_place_response_callback(self, future):
+        """
+        Handle the response from the PickPlace service call.
+
+        Args:
+            future: The future object containing the service response.
+        """
         try:
             response = future.result()
             if response.success:
@@ -294,10 +381,26 @@ class YoloVisionNode(Node):
             self.get_logger().error(f"Service call failed with exception: {e}")
         finally:
             self.service_call_in_progress = False
-    
+
     def run_supply_tracking(self, color_image_to_draw, resized_depth_image, yolo_input_image, header):
+        """
+        Run the supply tracking pipeline on a single frame.
+
+        This involves running the YOLO model, finding the best detection,
+        calculating its 3D position, tracking it across frames, and deciding
+        whether to issue a command ('go', 'stop') or call a service.
+
+        Args:
+            color_image_to_draw (np.ndarray): The original color image to draw on.
+            resized_depth_image (np.ndarray): The depth image, resized for processing.
+            yolo_input_image (np.ndarray): The color image, resized for the model.
+            header: The message header containing the timestamp.
+
+        Returns:
+            bool: True if a supply was detected in this frame, False otherwise.
+        """
         if self.intrinsics is None: return False
-        
+
         results = self.supply_model(yolo_input_image, verbose=False, half=self.use_half)
         supply_found_this_frame = False
         transformed_position = None
@@ -319,16 +422,16 @@ class YoloVisionNode(Node):
                     orig_cx = int(cx_res * self.intrinsics.width / self.proc_width)
                     orig_cy = int(cy_res * self.intrinsics.height / self.proc_height)
                     deprojected = rs2.rs2_deproject_pixel_to_point(self.intrinsics, [orig_cx, orig_cy], depth_in_mm)
-                    
+
                     optical_frame_coords = np.array([p / 1000.0 for p in deprojected])
-                    
+
                     point_in_optical_frame = PointStamped()
                     point_in_optical_frame.header.frame_id = "camera_color_optical_frame"
                     point_in_optical_frame.header.stamp = header.stamp
                     point_in_optical_frame.point.x, point_in_optical_frame.point.y, point_in_optical_frame.point.z = optical_frame_coords
-                    
+
                     target_frame = "camera_bottom_screw_frame"
-                    
+
                     try:
                         transform = self.tf_buffer.lookup_transform(target_frame, point_in_optical_frame.header.frame_id, rclpy.time.Time())
                         point_in_target_frame = do_transform_point(point_in_optical_frame, transform)
@@ -353,29 +456,28 @@ class YoloVisionNode(Node):
             self.last_detected_position = transformed_position
 
             if self.detection_counter >= self.DETECTION_THRESHOLD:
-                
-                ### [Hinton's Update V2 for Stop Condition] ###
-                # 정지 조건을 거리(distance)에서 Z축 좌표로 변경합니다.
+
+                # [Hinton's Update V2 for Stop Condition]
+                # Change the stop condition from Euclidean distance to Z-axis coordinate.
                 z_coord = transformed_position[2]
-                
-                # 서비스 호출이 진행 중이 아닐 때만 좌표 기반 판단을 수행합니다.
+
+                # Only perform coordinate-based checks if a service call is not already in progress.
                 if not self.service_call_in_progress:
-                    # 1. '정지' 및 서비스 호출 조건: Z축 좌표가 목표 범위(-0.1m ~ 0.4m) 내에 안정적으로 감지됨
+                    # 1. 'Stop' and service call condition: Target is stably detected within the target Z-range.
                     if -0.1 <= z_coord <= 0.4:
                         self.get_logger().info(f"Target in Z-range ({z_coord:.2f}m). Publishing 'stop' and calling PickPlace service.")
                         self.supply_pub.publish(String(data='stop'))
-                        
+
                         self.service_call_in_progress = True
                         request = PickPlace.Request()
                         request.x, request.y, request.z = transformed_position.tolist()
                         future = self.pick_place_client.call_async(request)
                         future.add_done_callback(self.pick_place_response_callback)
-                    
-                    # 2. '진행' 조건: 안정적으로 감지되었으나, 목표 Z축 범위 밖에 있음
+
+                    # 2. 'Go' condition: Target is stable but outside the target Z-range.
                     else:
                         self.get_logger().debug(f"Target is stable but out of stop Z-range ({z_coord:.2f}m). Publishing 'go'.")
                         self.supply_pub.publish(String(data='go'))
-                ### [Hinton's Update V2] END ###
 
             else:
                 self.get_logger().debug(f"Tracking target... continuity: {self.detection_counter}/{self.DETECTION_THRESHOLD}")
@@ -384,13 +486,20 @@ class YoloVisionNode(Node):
         else:
             self.detection_counter = 0
             self.last_detected_position = None
-            
+
             if not self.service_call_in_progress:
                 self.supply_pub.publish(String(data='go'))
-            
+
         return supply_found_this_frame
 
     def publish_compressed_viz(self, publisher, cv_image):
+        """
+        Publish an OpenCV image as a compressed ROS message.
+
+        Args:
+            publisher (Publisher): The publisher to use for sending the message.
+            cv_image (np.ndarray): The image to be published.
+        """
         msg = CompressedImage()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.format = "jpeg"
@@ -400,6 +509,16 @@ class YoloVisionNode(Node):
             publisher.publish(msg)
 
     def draw_marker_detections(self, image, results):
+        """
+        Draw bounding boxes for marker detections on an image.
+
+        Args:
+            image (np.ndarray): The image to draw on.
+            results: The YOLO detection results for markers.
+
+        Returns:
+            np.ndarray: The annotated image.
+        """
         for r in results:
             for box in r.boxes.cpu().numpy():
                 x1, y1, x2, y2 = map(int, box.xyxy[0]); conf, cls_id = box.conf[0], int(box.cls[0])
@@ -409,6 +528,16 @@ class YoloVisionNode(Node):
         return image
 
     def draw_traffic_detections(self, image, results):
+        """
+        Draw bounding boxes for traffic light detections on an image.
+
+        Args:
+            image (np.ndarray): The image to draw on.
+            results: The YOLO detection results for traffic lights.
+
+        Returns:
+            np.ndarray: The annotated image.
+        """
         for r in results:
             for box in r.boxes.cpu().numpy():
                 cls_id = int(box.cls[0])
@@ -421,15 +550,19 @@ class YoloVisionNode(Node):
         return image
 
     def destroy_node(self):
+        """Cleanly shut down the node and its resources."""
         self.get_logger().info("Shutting down the thread pool.")
         self._is_shutting_down = True; self.yolo_executor.shutdown(wait=True)
         super().destroy_node()
 
+
 def main(args=None):
+    """The main entry point for the node."""
     rclpy.init(args=args); node = YoloVisionNode()
     try: rclpy.spin(node)
     except KeyboardInterrupt: pass
     finally: node.destroy_node(); rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
