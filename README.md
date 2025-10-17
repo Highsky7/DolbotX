@@ -14,7 +14,7 @@ The system is built to run on a distributed computing system, typically between 
     - **Fall:** Detects and follows a series of visual markers (`A`, `E`, `Heart`, etc.).
     - **Winter:** Navigates snowy environments by identifying the drivable path from a fusion of standard track and snow segmentation.
 - **Object Following:** Tracks and follows a Unitree Go2 robot using a learned model of its rear profile, maintaining a set distance using depth data.
-- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths, even when multiple drivable regions coexist in the frame (see [`single_area.gif`](single_area.gif) and [`multi_area.gif`](multi_area%20.gif)).
+- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths, even when multiple drivable regions coexist in the frame (see the demonstration GIFs below).
 - **Multi-Camera System:** Integrates several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
 - **Hardware Integration:** Communicates with Arduino controllers for low-level wheel and LED control.
 
@@ -34,17 +34,22 @@ This ROS2 workspace is organized into several key packages:
 
 The `robot_vision` package is the core of the robot's autonomous capabilities. It is designed for high performance in a real-time, distributed computing environment.
 
-#### Demonstration GIFs
+#### Demonstration Gallery
 
-- **Single-area drive:**
-  ![Single-area drive visualization](single_area.gif)
-  Showcases a `robot_vision` `~drive.py` node handling a single drivable area with smooth, reliable path generation.
-- **Multi-area drive:**
-  ![Multi-area drive visualization](multi_area%20.gif)
-  Highlights how the same family of `robot_vision` `~drive.py` nodes generalize to multiple drivable regions without manual mode switching.
-- **Competition run:**
-  ![Competition run visualization](competition_result.gif)
-  Captures the competition run produced by the `robot_vision/bezier_*_drive.py` nodes, demonstrating end-to-end perception and planning performance.
+<p align="center">
+  <img src="single_area.gif" alt="Single-area drive visualization" width="640">
+</p>
+<p align="center"><em>Single-area drive: a `robot_vision` `~drive.py` node maintaining a smooth path through a single drivable corridor.</em></p>
+
+<p align="center">
+  <img src="multi_area.gif" alt="Multi-area drive visualization" width="640">
+</p>
+<p align="center"><em>Multi-area drive: the same planning stack gracefully transitions across multiple drivable regions without mode changes.</em></p>
+
+<p align="center">
+  <img src="competition_result.gif" alt="Competition run visualization" width="640">
+</p>
+<p align="center"><em>Competition run: end-to-end perception and planning performance from the `robot_vision/bezier_*_drive.py` pipeline.</em></p>
 
 #### Architectural Highlights:
 
