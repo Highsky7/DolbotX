@@ -13,7 +13,7 @@ object_follower:
 
     v_cruise: 0.5
     v_max_hw: 0.6
-    wheel_speed_max: 0.6     # ← 최종 좌/우 바퀴 속도 절대 상한
+    wheel_speed_max: 0.6     # Absolute max wheel speed for both sides
 
     turn_ang_straight: 0.05
     turn_ang_full: 0.6

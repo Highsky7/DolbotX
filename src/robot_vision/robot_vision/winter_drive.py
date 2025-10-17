@@ -3,17 +3,17 @@
 # FILE: winter_drive.py
 # AUTHOR: Seungmin Lee
 # DESCRIPTION:
-# 1. 경로 계산 로직을 순수 NumPy 벡터화 연산으로 대체하여 CPU 병목 현상 제거 (성능 극대화)
-# 2. 시각화 토픽 구독자가 있을 때만 시각화 연산을 수행하여 불필요한 CPU 자원 낭비 방지
-# 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용
-# 4. 콜백 함수에서 모든 연산을 제거하고 작업 스레드로 이전하여 통신 지연 가능성 원천 차단
-# 5. 주요 파라미터를 클래스 상수로 관리하여 가독성 및 유지보수성 향상
-# 6. Pure Pursuit 알고리즘 안정성 강화: 경로가 짧을 경우 마지막 점을 목표점으로 지정
-# 7. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
-# 8. [핵심 개선] '신뢰도 기반 동적 스무딩' 적용: 경로 포인트 수에 따라 스무딩 강도를 자동 조절하여 극한의 안정성 확보
-# 9. [융합 아키텍처] 2개의 ONNX 모델(Drivable Area, Sand) 추론 결과를 실시간으로 융합하여 통합 경로 생성
-# 10. [안정성 강화] 주행 영역 미검출 시 조향각 0을 발행하여 Fail-Safe 동작 보장
-# 11. [핵심 수정] 지정된 ROI(관심 영역) 내에서만 경로를 생성하여 노이즈 제거 및 안정성 극대화
+# 1. Replaces path computation with pure NumPy vectorization to remove CPU bottlenecks.
+# 2. Runs visualization work only when a subscriber is present to avoid wasted cycles.
+# 3. Applies a Best Effort QoS profile tailored for real-time image transport.
+# 4. Moves heavy processing out of callbacks into a worker thread to prevent latency.
+# 5. Stores critical parameters as class constants for readability and maintenance.
+# 6. Keeps Pure Pursuit stable by targeting the final point when the path is short.
+# 7. Uses a virtual rear axle reference to improve geometric accuracy.
+# 8. Blends paths with confidence-weighted smoothing for extreme stability.
+# 9. Fuses drivable area and snow masks into a unified planning surface.
+# 10. Publishes a zero steering angle when no drivable region is detected as a fail-safe.
+# 11. Generates paths only inside a configured ROI to suppress noise and maximise robustness.
 
 import rclpy
 from rclpy.node import Node
@@ -32,7 +32,7 @@ import traceback
 
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
-# --- 유틸리티 함수 (변경 없음) ---
+# --- Utility helpers (unchanged) ---
 def polyfit_path(points_y, points_x, order=2):
     if len(points_y) < 10: return None
     try: return np.polyfit(points_y, points_x, order)
@@ -60,7 +60,7 @@ def overlay_polyline(image, coeff, color=(0, 255, 0), step=4, thickness=3):
         if 0 <= x < w: draw_points.append((int(x), int(y)))
     if len(draw_points) > 1: cv2.polylines(image, [np.array(draw_points, dtype=np.int32)], False, color, thickness)
     return image
-# --- 유틸리티 함수 끝 ---
+# --- End of utility helpers ---
 
 
 class YoloBevFusedDrivableAreaNode(Node):
@@ -72,14 +72,14 @@ class YoloBevFusedDrivableAreaNode(Node):
     _MAX_SMOOTHING_ALPHA = 0.6
     _MIN_SMOOTHING_ALPHA = 0.3
 
-    # 경로 탐색을 위한 ROI(관심 영역) 정의 (비율 기준)
+    # ROI definition for path search expressed as image ratios.
     _ROI_TOP_Y_RATIO = 0.5
     _ROI_BOTTOM_Y_RATIO = 1.0
     _ROI_WIDTH_RATIO = 1.0
     
     def __init__(self):
         super().__init__('yolo_bev_fused_drivable_area_node')
-        self.get_logger().info("--- YOLO BEV Fused Drivable Area Planning Node (Hinton's Ultimate Fusion Architecture with ROI) ---")
+        self.get_logger().info("--- YOLO BEV fused drivable-area planning node (ROI-optimized dual-fusion pipeline) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
@@ -210,7 +210,7 @@ class YoloBevFusedDrivableAreaNode(Node):
         return x_rear, y_rear
 
     def calculate_steering_from_area(self, area_mask):
-        # ROI 적용 로직 (springfall과 동일)
+        # Apply the same ROI masking strategy as the spring/fall planner.
         roi_top_y = int(self.bev_h * self._ROI_TOP_Y_RATIO)
         roi_bottom_y = int(self.bev_h * self._ROI_BOTTOM_Y_RATIO)
         roi_half_width = int((self.bev_w * self._ROI_WIDTH_RATIO) / 2)
@@ -318,7 +318,7 @@ class YoloBevFusedDrivableAreaNode(Node):
         if viz_data.get('goal_point_bev') is not None:
             cv2.circle(viz_image, viz_data['goal_point_bev'], 10, (0, 0, 255), -1)
 
-        # ROI 영역을 시각화합니다.
+        # Visualize the ROI boundaries on the BEV image.
         if 'roi_coords' in viz_data:
             x1, y1, x2, y2 = viz_data['roi_coords']
             cv2.rectangle(viz_image, (x1, y1), (x2, y2), (0, 255, 255), 2)

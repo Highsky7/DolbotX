@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: springfall_drive.py
-# AUTHOR: Geoffrey Hinton
 # DESCRIPTION:
-# [Hinton's Final Optimization & Robust Pure Pursuit Logic with Attentional ROI]
-# 1. 경로 계산 로직을 순수 NumPy 벡터화 연산으로 대체하여 CPU 병목 현상 제거 (성능 극대화)
-# 2. 시각화 토픽 구독자가 있을 때만 시각화 연산을 수행하여 불필요한 CPU 자원 낭비 방지
-# 3. 실시간 영상 스트림에 최적화된 'Best Effort' QoS 프로파일 적용
-# 4. 콜백 함수에서 모든 연산을 제거하고 작업 스레드로 이전하여 통신 지연 가능성 원천 차단
-# 5. 주요 파라미터를 클래스 상수로 관리하여 가독성 및 유지보수성 향상
-# 6. Pure Pursuit 알고리즘 안정성 강화: 경로가 짧을 경우 마지막 점을 목표점으로 지정
-# 7. 제어 기준점을 '가상 후륜 축'으로 변경하여 Pure Pursuit 알고리즘의 정확도 극대화
-# 8. [핵심 개선] '신뢰도 기반 동적 스무딩' 적용: 경로 포인트 수에 따라 스무딩 강도를 자동 조절하여 극한의 안정성 확보
-# 9. [Fail-Safe] 주행 영역 미감지 시 조향각 0도를 발행하여 안정성 확보
-# 10. [핵심 수정] 지정된 ROI(관심 영역) 내에서만 경로를 생성하여 노이즈 제거 및 안정성 극대화
+# Optimized Pure Pursuit planner with ROI-aware drivable area fusion.
+# 1. Replaces path computation with pure NumPy vectorization to remove CPU bottlenecks.
+# 2. Runs visualization work only when a subscriber is present to avoid wasted cycles.
+# 3. Applies a Best Effort QoS profile tailored for real-time image transport.
+# 4. Moves heavy processing out of callbacks into a worker thread to prevent latency.
+# 5. Stores critical parameters as class constants for readability and maintenance.
+# 6. Keeps Pure Pursuit stable by targeting the final point when the path is short.
+# 7. Uses a virtual rear axle reference to improve geometric accuracy.
+# 8. Blends paths with confidence-weighted smoothing for extreme stability.
+# 9. Publishes a zero steering angle when no drivable region is detected as a fail-safe.
+# 10. Generates paths only inside a configured ROI to suppress noise and maximise robustness.
 
 import rclpy
 from rclpy.node import Node
@@ -32,7 +31,7 @@ import traceback
 
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
-# --- 유틸리티 함수 (변경 없음) ---
+# --- Utility helpers (unchanged) ---
 def polyfit_path(points_y, points_x, order=2):
     if len(points_y) < 10: return None
     try: return np.polyfit(points_y, points_x, order)
@@ -60,7 +59,7 @@ def overlay_polyline(image, coeff, color=(0, 255, 0), step=4, thickness=3):
         if 0 <= x < w: draw_points.append((int(x), int(y)))
     if len(draw_points) > 1: cv2.polylines(image, [np.array(draw_points, dtype=np.int32)], False, color, thickness)
     return image
-# --- 유틸리티 함수 끝 ---
+# --- End of utility helpers ---
 
 
 class YoloBevDrivableAreaNode(Node):
@@ -72,15 +71,15 @@ class YoloBevDrivableAreaNode(Node):
     _MAX_SMOOTHING_ALPHA = 0.6
     _MIN_SMOOTHING_ALPHA = 0.3
     
-    # [힌튼의 핵심 수정] 경로 탐색을 위한 ROI(관심 영역) 정의 (비율 기준)
-    # 이 값들을 조절하여 경로 탐색 영역을 튜닝할 수 있습니다.
-    _ROI_TOP_Y_RATIO = 0.0  # BEV 이미지 높이의 50% 지점부터 ROI 시작
-    _ROI_BOTTOM_Y_RATIO = 1.0 # BEV 이미지 높이의 100% 지점(가장 아래)에서 ROI 끝
-    _ROI_WIDTH_RATIO = 1.0 # BEV 이미지 중앙을 기준으로 좌우 80% 폭만 사용
+    # ROI definition for path search expressed as image ratios.
+    # Adjust these values to tune the planning window.
+    _ROI_TOP_Y_RATIO = 0.0  # Start of ROI relative to the BEV image height.
+    _ROI_BOTTOM_Y_RATIO = 1.0 # End of ROI relative to the BEV image height.
+    _ROI_WIDTH_RATIO = 1.0 # Horizontal ROI span expressed as a fraction of the width.
     
     def __init__(self):
         super().__init__('yolo_bev_drivable_area_node')
-        self.get_logger().info("--- YOLO BEV Drivable Area Planning Node (Hinton's Ultimate Optimized ONNX Architecture with ROI) ---")
+        self.get_logger().info("--- YOLO BEV drivable-area planning node (ROI-optimized ONNX pipeline) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
@@ -203,9 +202,7 @@ class YoloBevDrivableAreaNode(Node):
         return x_rear, y_rear
 
     def calculate_steering_from_area(self, area_mask):
-        # ================================================================= #
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [힌튼의 핵심 수정] ROI 적용 로직 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ #
-        # 1. 설정된 비율에 따라 ROI의 실제 픽셀 좌표를 계산합니다.
+        # Apply the configured ROI before extracting the path from the mask.
         roi_top_y = int(self.bev_h * self._ROI_TOP_Y_RATIO)
         roi_bottom_y = int(self.bev_h * self._ROI_BOTTOM_Y_RATIO)
         roi_half_width = int((self.bev_w * self._ROI_WIDTH_RATIO) / 2)
@@ -213,22 +210,20 @@ class YoloBevDrivableAreaNode(Node):
         roi_left_x = roi_center_x - roi_half_width
         roi_right_x = roi_center_x + roi_half_width
 
-        # 2. ROI 영역만 흰색으로 채워진 마스크를 생성합니다. (집중의 '창')
+        # Build a binary mask that keeps only the ROI window.
         roi_mask = np.zeros_like(area_mask)
         cv2.rectangle(roi_mask, (roi_left_x, roi_top_y), (roi_right_x, roi_bottom_y), 255, -1)
         
-        # 3. bitwise_and 연산을 통해 원본 마스크에서 ROI 영역만 정확히 추출합니다.
+        # Extract the ROI portion from the original drivable mask.
         roi_area_mask = cv2.bitwise_and(area_mask, area_mask, mask=roi_mask)
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ [힌튼의 핵심 수정] ROI 적용 로직 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ #
-        # ================================================================= #
 
-        is_detected = np.any(roi_area_mask) # 이제 ROI 내부의 영역만 감지 대상으로 간주
+        is_detected = np.any(roi_area_mask) # ROI pixels are treated as the detection result.
         self.status_pub.publish(Bool(data=bool(is_detected)))
         if not is_detected:
             self.tracked_center_path_coeff = None
             return None, {'roi_coords': (roi_left_x, roi_top_y, roi_right_x, roi_bottom_y)}
         
-        # NumPy 벡터화로 ROI 내부의 경로점 계산
+        # Compute candidate path points inside the ROI with NumPy vectorization.
         y_indices, x_indices = np.where(roi_area_mask > 0)
         
         num_points = len(y_indices)
@@ -267,7 +262,7 @@ class YoloBevDrivableAreaNode(Node):
         if final_path_coeff is None:
             return None, {'roi_coords': (roi_left_x, roi_top_y, roi_right_x, roi_bottom_y)}
         
-        # 목표점 계산 시에도 ROI의 상단 경계(roi_top_y)를 고려합니다.
+        # Respect the ROI top boundary when computing the lookahead target.
         y_bev_coords = np.arange(roi_bottom_y - 1, roi_top_y, -1)
         x_bev_coords = np.polyval(final_path_coeff, y_bev_coords)
         
@@ -319,10 +314,10 @@ class YoloBevDrivableAreaNode(Node):
         if viz_data.get('goal_point_bev') is not None:
             cv2.circle(viz_image, viz_data['goal_point_bev'], 10, (0, 0, 255), -1)
 
-        # [힌튼의 핵심 수정] ROI 영역을 시각화합니다.
+        # Visualize the ROI boundaries on the BEV image.
         if 'roi_coords' in viz_data:
             x1, y1, x2, y2 = viz_data['roi_coords']
-            cv2.rectangle(viz_image, (x1, y1), (x2, y2), (0, 255, 255), 2) # 노란색-청록색 사각형으로 표시
+            cv2.rectangle(viz_image, (x1, y1), (x2, y2), (0, 255, 255), 2) # Highlight with a yellow-cyan outline.
             
         steer_deg = math.degrees(steering_angle_rad) if steering_angle_rad is not None else 0.0
         steer_text = f"Steer: {steer_deg:.1f} deg"

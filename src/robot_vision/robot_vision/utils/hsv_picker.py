@@ -9,49 +9,49 @@ from sensor_msgs.msg import CompressedImage
 
 class HsvPickerNode(Node):
     """
-    ROS2 토픽을 구독하여 HSV 값을 추출하는 노드 클래스
+    Node that subscribes to a ROS 2 topic and inspects HSV values.
     """
     def __init__(self):
         super().__init__('hsv_picker_node')
         self.get_logger().info('HSV Picker ROS2 Node has been started.')
 
-        # ROS2 토픽 구독자 설정
+        # Set up the ROS 2 subscription
         self.subscription = self.create_subscription(
             CompressedImage,
-            '/camera/color/image_raw/compressed',  # 사용자 요청 토픽
+            '/camera/color/image_raw/compressed',  # Requested topic
             self.image_callback,
             10)
         
         self.cv_image = None
         self.window_name = 'HSV Picker - Click on the track'
         cv2.namedWindow(self.window_name)
-        # 마우스 콜백에 self(노드 인스턴스)를 전달하여 콜백 함수 내에서 이미지에 접근 가능하게 함
+        # Pass self to the mouse callback so it can access the latest frame
         cv2.setMouseCallback(self.window_name, self.get_hsv_value, self)
 
-        self.get_logger().info("ROS2 토픽에서 이미지를 기다리는 중...")
-        self.get_logger().info("Track 위를 마우스로 클릭하여 HSV 값을 확인하세요. 종료하려면 'q'를 누르세요.")
+        self.get_logger().info("Waiting for images from the ROS 2 topic...")
+        self.get_logger().info("Click on the track to inspect HSV values. Press 'q' to exit.")
 
     def get_hsv_value(self, event, x, y, flags, param):
         """
-        마우스 클릭 이벤트 콜백 함수. 클릭된 픽셀의 BGR, HSV 값을 출력합니다.
+        Mouse callback that prints the BGR and HSV values of the clicked pixel.
         """
-        # param으로 전달된 self(노드 인스턴스)를 사용
+        # Use the node instance passed as param
         node_instance = param
         if event == cv2.EVENT_LBUTTONDOWN:
             if node_instance.cv_image is not None:
-                # BGR 이미지를 HSV로 변환
+                # Convert the BGR pixel to HSV
                 hsv_pixel = cv2.cvtColor(np.uint8([[node_instance.cv_image[y, x]]]), cv2.COLOR_BGR2HSV)
-                # 로그 출력
+                # Log the sampled value
                 self.get_logger().info(f"Clicked Pixel BGR: {node_instance.cv_image[y, x]}, HSV: {hsv_pixel[0][0]}")
             else:
-                self.get_logger().warn("아직 이미지가 수신되지 않았습니다.")
+                self.get_logger().warn("No image received yet.")
 
     def image_callback(self, msg):
         """
-        이미지 토픽을 수신하면 호출되는 콜백 함수.
+        Callback that decodes incoming image messages.
         """
         try:
-            # CompressedImage 메시지를 OpenCV 이미지로 디코딩
+            # Decode the compressed image into an OpenCV matrix
             np_arr = np.frombuffer(msg.data, np.uint8)
             self.cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         except Exception as e:
@@ -60,20 +60,20 @@ class HsvPickerNode(Node):
 
     def run(self):
         """
-        메인 루프를 실행하여 이미지 출력 및 사용자 입력을 처리합니다.
+        Main loop: update the display and handle user input.
         """
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.01)  # ROS2 콜백 처리
+            rclpy.spin_once(self, timeout_sec=0.01)  # Process ROS 2 callbacks
             
             if self.cv_image is not None:
                 cv2.imshow(self.window_name, self.cv_image)
 
-            # 'q' 키를 누르면 종료
+            # Exit when 'q' is pressed
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                self.get_logger().info("'q' 키 입력 -> 종료")
+                self.get_logger().info("'q' pressed -> exiting")
                 break
-        
-        # 종료 전 리소스 정리
+
+        # Clean up before shutting down
         cv2.destroyAllWindows()
         self.destroy_node()
         rclpy.shutdown()

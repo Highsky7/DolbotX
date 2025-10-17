@@ -7,7 +7,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     pkg_share = get_package_share_directory('steering_to_diff')
 
-    # 기본 파라미터 파일 경로 (패키지 내부 config/steering_to_diff.yaml)
+    # Default parameter file within the package (config/params.yaml)
     default_params = PathJoinSubstitution([pkg_share, 'config', 'params.yaml'])
 
     params_file_arg = DeclareLaunchArgument(

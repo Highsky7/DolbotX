@@ -9,24 +9,24 @@ setup(
     version='0.0.1',
     packages=find_packages(exclude=['test', 'tests']),
     data_files=[
-        # ament index 등록
+        # Register with the ament index
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
 
-        # package.xml 설치
+        # Install package.xml
         ('share/' + package_name, ['package.xml']),
 
-        # (있다면) launch/ 설치
+        # Install launch files if present
         ('share/' + package_name + '/launch', glob('launch/*.py')),
 
-        # (있다면) config/ 설치
+        # Install config files if present
         ('share/' + package_name + '/config', glob('config/*')),
     ],
     install_requires=[
-        'setuptools',   # 런타임 파이썬 의존성은 보통 package.xml의 exec_depend로 관리
+        'setuptools',   # Runtime Python deps are usually tracked in package.xml exec_depend
     ],
     extras_require={
-        # 테스트 의존성은 tests_require 대신 여기로
+        # Place test dependencies here instead of tests_require
         'test': [
             'pytest',
             'pytest-cov',

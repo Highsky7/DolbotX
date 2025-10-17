@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: video_converter_v2.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: DolbotX Team
 # DESCRIPTION:
-# [Hinton's Workflow-Optimized Video Transcoder]
-# 1. 입력 경로의 기본값을 '~/ros2_recordings/unified'로 설정하여 편의성 극대화
-# 2. 출력 경로를 입력 경로 기반으로 자동 생성 (e.g., input -> input_h264)
-# 3. 커맨드라인 인자를 통해 기본 경로를 오버라이드할 수 있는 유연성 유지
-# 4. FFmpeg 및 하드웨어 가속(NVENC 등)을 활용한 초고속 변환 기능은 그대로 유지
+# Workflow-oriented video transcoder.
+# 1. Defaults the input directory to '~/ros2_recordings/unified' for convenience.
+# 2. Automatically derives an output directory (e.g., input -> input_h264).
+# 3. Allows overriding defaults via command-line arguments.
+# 4. Preserves high-speed conversion using FFmpeg and hardware accelerators (NVENC, etc.).
 
 import os
 import subprocess
@@ -16,7 +16,7 @@ from pathlib import Path
 
 def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_original):
     """
-    지정된 디렉토리의 비디오 파일들을 FFmpeg를 사용하여 H.264로 변환합니다.
+    Convert all videos in the given directory to H.264 using FFmpeg.
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
@@ -38,26 +38,22 @@ def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_ori
 
         print(f"▶️ Converting '{filename}'...")
 
-        # --- 이 부분이 수정되었습니다 ---
-        # 기본 명령어를 구성합니다.
+        # Build the FFmpeg command.
         command = [
             'ffmpeg', '-y', '-i', input_path,
             '-c:v', codec
         ]
         
-        # libx264 (CPU) 코덱인 경우에만 CRF 옵션을 추가합니다.
-        # 옵션과 값을 함께 extend로 추가하여 순서가 꼬이지 않도록 합니다.
+        # Add CRF only when the CPU encoder (libx264) is used.
         if codec == 'libx264':
             command.extend(['-crf', str(crf)])
 
-        # 나머지 옵션과 출력 경로를 추가합니다.
+        # Add the remaining options and the output path.
         command.extend([
             '-preset', preset,
             '-c:a', 'copy', 
             output_path
         ])
-        # --- 수정 끝 ---
-
         try:
             result = subprocess.run(command, check=True, capture_output=True, text=True)
             print(f"✅ Successfully converted '{filename}'.")
@@ -75,7 +71,6 @@ def convert_videos_to_h264(input_dir, output_dir, codec, crf, preset, delete_ori
             return
 
 def main():
-    # --- 이 부분은 수정되지 않았습니다 ---
     parser = argparse.ArgumentParser(
         description="Convert videos to H.264. Defaults to converting '~/ros2_recordings/unified'.",
         formatter_class=argparse.RawTextHelpFormatter

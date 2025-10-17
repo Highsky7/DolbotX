@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # FILE: unified_recorder.py
-# AUTHOR: Geoffrey Hinton
+# AUTHOR: DolbotX Team
 # DESCRIPTION:
-# [Hinton's Unified Multi-Camera Data Recording Architecture]
-# 1. 단일 ROS 2 노드에서 여러 카메라 토픽을 동시에 구독하여 데이터 수집
-#    -> 모든 영상 녹화의 시작과 종료를 동기화하여 데이터셋의 정합성 보장
-# 2. 특정 토픽('camera3')에 대해서만 BEV(Bird's-Eye View) 변환 로직을 적용
-#    -> BEV 데이터와 원본 영상 데이터를 한 번의 주행으로 수집 가능
-# 3. 확장성을 극대화한 파라미터 설계: 카메라 토픽, 출력 경로 등을 리스트로 관리
-#    -> 코드 수정 없이 launch 파일에서 파라미터 변경만으로 카메라 추가/삭제 가능
-# 4. 안정적인 종료(Graceful Shutdown) 보장: 노드 종료 시 모든 비디오 파일을 안전하게 release
-# 5. CvBridge와 Numpy 직접 디코딩 방식을 혼용하여 기존 로직과의 호환성 및 안정성 확보
+# Unified multi-camera data recording node.
+# 1. Subscribes to multiple camera topics from a single ROS 2 node to keep capture in sync.
+# 2. Applies BEV (Bird's-Eye View) conversion for a specific topic (camera3) while recording.
+# 3. Stores camera topics and output paths as parameter lists for easy launch-time customization.
+# 4. Releases all video writers cleanly on shutdown to preserve recordings.
+# 5. Mixes CvBridge decoding with direct NumPy processing for flexibility and stability.
 
 import rclpy
 from rclpy.node import Node
@@ -28,14 +25,14 @@ from cv_bridge import CvBridge
 
 class UnifiedRecorderNode(Node):
     """
-    여러 카메라 토픽을 구독하여 동기화된 비디오 파일로 녹화하는 통합 노드입니다.
-    특정 카메라에 대해서는 BEV 변환을 적용합니다.
+    Unified recorder that subscribes to multiple camera topics and writes
+    synchronized video files, applying BEV transformation to a designated feed.
     """
     def __init__(self):
         super().__init__('unified_recorder_node')
-        self.get_logger().info("--- Hinton's Unified Multi-Camera Recorder ---")
+        self.get_logger().info("--- Unified multi-camera recorder ---")
 
-        # === 1. 파라미터 선언 및 가져오기 ===
+        # === 1. Declare and fetch parameters ===
         self.declare_parameter('camera_topics', 
             ['/camera1/image_raw/compressed', 
              '/camera2/image_raw/compressed', 
@@ -69,7 +66,7 @@ class UnifiedRecorderNode(Node):
         self.get_logger().info(f"Outputting to files: {self.output_filenames}")
         self.get_logger().info(f"Video FPS set to: {self.fps}")
 
-        # === 2. BEV 변환 파라미터 로드 (camera3용) ===
+        # === 2. Load BEV transform parameters (for camera3) ===
         self.M_bev, self.bev_w, self.bev_h = None, None, None
         if self.bev_target_topic in self.camera_topics:
             try:
@@ -86,21 +83,21 @@ class UnifiedRecorderNode(Node):
                 rclpy.shutdown()
                 return
         
-        # === 3. 변수 초기화 ===
+        # === 3. Initialize state ===
         self.bridge = CvBridge()
-        self.video_writers = {}  # 토픽 이름을 key로 사용하여 VideoWriter 객체 저장
+        self.video_writers = {}  # Map topic name -> VideoWriter
         self.is_recording_started = False
         self.frame_counters = {topic: 0 for topic in self.camera_topics}
 
-        # === 4. 각 토픽에 대한 구독자 생성 ===
+        # === 4. Create subscribers for each topic ===
         qos_profile_sensor_data = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
-            depth=10 # 여러 스트림을 다루므로 약간의 버퍼를 둠
+            depth=10 # Extra buffer for multiple streams
         )
 
         for topic in self.camera_topics:
-            # partial을 사용하여 콜백 함수에 토픽 이름을 인자로 넘겨줌
+            # Use partial to pass the topic name into the callback
             callback_with_topic = partial(self.image_callback, topic_name=topic)
             self.create_subscription(
                 CompressedImage,
@@ -113,26 +110,25 @@ class UnifiedRecorderNode(Node):
 
     def image_callback(self, msg, topic_name):
         """
-        모든 카메라 토픽이 공유하는 통합 콜백 함수.
-        토픽 이름(topic_name)을 기반으로 적절한 처리를 수행합니다.
+        Shared callback for all camera topics; dispatch based on topic name.
         """
-        # 첫 프레임 수신 시, 모든 비디오 라이터 초기화 및 녹화 시작
+        # On the first frame, initialize writers and start recording
         if not self.is_recording_started:
             self.initialize_all_video_writers(msg, topic_name)
-            if not self.is_recording_started: # 초기화 실패 시
+            if not self.is_recording_started: # Abort if initialization failed
                 return
 
-        # 해당 토픽의 비디오 라이터가 준비되었는지 확인
+        # Ensure this topic has a ready video writer
         writer = self.video_writers.get(topic_name)
         if writer is None or not writer.isOpened():
             self.get_logger().warn(f"Video writer for '{topic_name}' is not ready. Skipping frame.", throttle_duration_sec=5)
             return
 
         try:
-            # === 프레임 디코딩 및 BEV 변환 (필요시) ===
+            # === Decode frame and apply BEV when required ===
             processed_image = None
             if topic_name == self.bev_target_topic and self.M_bev is not None:
-                # BEV 변환 로직 (기존 bev_recorder.py와 동일)
+                # BEV conversion logic (mirrors bev_recorder.py)
                 np_arr = np.frombuffer(msg.data, np.uint8)
                 cv_color_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if cv_color_image is not None:
@@ -140,10 +136,10 @@ class UnifiedRecorderNode(Node):
                         cv_color_image, self.M_bev, (self.bev_w, self.bev_h), flags=cv2.INTER_LINEAR
                     )
             else:
-                # 일반 카메라 디코딩 로직 (CvBridge 사용)
+                # Standard decoding path via CvBridge
                 processed_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
 
-            # === 프레임 쓰기 ===
+            # === Write the frame ===
             if processed_image is not None:
                 writer.write(processed_image)
                 self.frame_counters[topic_name] += 1
@@ -155,29 +151,29 @@ class UnifiedRecorderNode(Node):
 
     def initialize_all_video_writers(self, initial_msg, initial_topic):
         """
-        첫 이미지 메시지를 기반으로 모든 VideoWriter 객체를 초기화하고 녹화를 시작합니다.
-        이 함수는 단 한 번만 실행됩니다.
+        Initialize all VideoWriter instances once the first image arrives.
+        This function runs exactly once.
         """
         self.get_logger().info("First image received. Initializing all video writers for synchronized recording...")
         
-        # 타임스탬프를 모든 파일명에 공통으로 적용하여 세트임을 명시
+        # Stamp all filenames with a shared timestamp to keep the set grouped
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         
         try:
             for topic, filename_template in zip(self.camera_topics, self.output_filenames):
-                # 파일명 생성 (예: camera1_20250910_153000.mp4)
+                # Build filename, e.g., camera1_20250910_153000.mp4
                 base, ext = os.path.splitext(filename_template)
                 filename = f"{base}_{timestamp}{ext}"
                 output_path = os.path.join(self.output_dir, filename)
 
                 width, height = -1, -1
 
-                # BEV 영상은 미리 정의된 크기 사용
+                # Use the predefined BEV dimensions when applicable
                 if topic == self.bev_target_topic and self.bev_w is not None:
                     width, height = self.bev_w, self.bev_h
                 else:
-                    # 다른 영상들은 첫 프레임의 크기를 동적으로 파악
+                    # Derive other resolutions dynamically from the first frame
                     temp_image = self.bridge.compressed_imgmsg_to_cv2(initial_msg, "bgr8")
                     h, w, _ = temp_image.shape
                     width, height = w, h
@@ -197,7 +193,7 @@ class UnifiedRecorderNode(Node):
         except Exception as e:
             self.get_logger().error(f"FATAL: Failed to initialize video writers: {e}")
             self.get_logger().error("Please check image topics, file permissions, and codec support.")
-            # 실패 시, 부분적으로 생성된 writer들을 정리
+            # If initialization failed, clean up any partially created writers
             for writer in self.video_writers.values():
                 if writer.isOpened():
                     writer.release()
@@ -206,7 +202,7 @@ class UnifiedRecorderNode(Node):
 
     def destroy_node(self):
         """
-        노드 종료 시 모든 비디오 파일을 안전하게 닫습니다.
+        Close all video files safely when the node shuts down.
         """
         self.get_logger().info("Shutting down node and finalizing videos...")
         for topic, writer in self.video_writers.items():
@@ -226,7 +222,7 @@ class UnifiedRecorderNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = UnifiedRecorderNode()
-    if rclpy.ok(): # 노드 초기화 성공 여부 확인
+    if rclpy.ok(): # Ensure the node initialized correctly
         try:
             rclpy.spin(node)
         except KeyboardInterrupt:

@@ -1,19 +1,19 @@
 steering_to_diff:
   ros__parameters:
-    # 기구 파라미터
+    # Kinematic parameters
     wheelbase: 0.60
     track_width: 0.516
 
-    # 속도/제한
+    # Speed limits
     v_nominal: 0.5
     max_speed: 0.6
     speed_min: -5.5
     speed_max:  5.5
     kappa_gain: 3.2
     max_steering_angle: 1.5        # rad
-    max_curvature: 0.0             # 0.0이면 비활성
+    max_curvature: 0.0             # Disabled when set to 0.0
 
-    # 토픽
+    # Topics
     steering_angle_topic: "/steering_angle"
     speed_topic: "/target_speed"
     left_topic: "/cmd_vel_left"
@@ -22,17 +22,17 @@ steering_to_diff:
 
     # QoS
     qos_history_depth: 10
-    qos_reliability: "RELIABLE"    # "BEST_EFFORT" 가능
+    qos_reliability: "RELIABLE"    # Can be "BEST_EFFORT"
 
-    # 데드존/필터
+    # Dead-zone / filters
     v_deadzone: 0.001
     ang_deadzone: 0.0001
     enable_filters: false
     angle_alpha: 0.2
     speed_alpha: 0.2
 
-    # 제어주기
+    # Control loop
     control_hz: 50.0
 
-    # 런타임 속도 입력 사용 여부
+    # Enable runtime speed topic input
     use_speed_topic: false

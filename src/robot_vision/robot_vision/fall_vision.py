@@ -51,7 +51,7 @@ class VisionMarkerDetectorNode(Node):
         for two camera feeds.
         """
         super().__init__('vision_marker_detector_node')
-        self.get_logger().info("--- Vision Marker Detection Node (Enhanced by Hinton) ---")
+        self.get_logger().info("--- Vision marker detection node ---")
 
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
 

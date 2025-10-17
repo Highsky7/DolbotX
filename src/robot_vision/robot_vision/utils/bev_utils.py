@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-유틸리티 스크립트: BEV(Birds-Eye View) 파라미터 설정 (ROS2 버전)
-----------------------------------------------------------------
-ROS2 토픽 (/camera/color/image_raw/compressed)을 구독하여
-실시간 영상에서 BEV 파라미터를 설정합니다.
+Utility script: configure BEV (Bird's-Eye View) parameters for ROS 2.
+-----------------------------------------------------------------
+Subscribes to the ROS 2 topic (/camera/color/image_raw/compressed) and lets
+you pick four source points from live video.
 
-- 사용자가 BEV 설정에 필요한 4개의 점을 직접 선택 (수동 지정)
-- 선택된 4개 원본 좌표(src_points)를 npz 및 txt 파일로 저장
+- Manually select the four source points required for the BEV transform.
+- Persist the chosen coordinates (src_points) into both NPZ and TXT files.
 
-설정 후 's' 키를 누르면 BEV 파라미터가 저장됩니다.
+Press 's' after selection to save the BEV parameters.
 """
 
 import cv2
@@ -25,26 +25,26 @@ class BevParamSetterNode(Node):
         super().__init__('bev_param_setter_node')
         self.get_logger().info('BEV Parameter Setter ROS2 Node has been started.')
 
-        # BEV 파라미터
+        # BEV parameters
         self.warp_w = 640
         self.warp_h = 640
         self.out_npz_file = 'bev_params.npz'
         self.out_txt_file = 'selected_bev_src_points.txt'
 
-        # ROS2 토픽 구독자
+        # ROS 2 subscriber
         self.subscription = self.create_subscription(
             CompressedImage,
-            '/camera3/image_raw/compressed',  # 사용자 요청 토픽
+            '/camera3/image_raw/compressed',  # Requested topic
             self.image_callback,
             10
         )
 
-        # 상태 변수 (클래스 인스턴스 변수로 관리)
+        # State variables tracked at the instance level
         self.cv_image = None
         self.src_points = []
         self.max_points = 4
 
-        # OpenCV 윈도우 및 마우스 콜백 설정
+        # Configure OpenCV windows and mouse callbacks
         cv2.namedWindow("Original", cv2.WINDOW_NORMAL)
         cv2.namedWindow("BEV", cv2.WINDOW_NORMAL)
         cv2.setMouseCallback("Original", self.mouse_callback, self)
@@ -53,64 +53,64 @@ class BevParamSetterNode(Node):
 
     def print_instructions(self):
         self.get_logger().info("\n[INSTRUCTIONS]")
-        self.get_logger().info("ROS2 토픽에서 이미지를 기다리는 중...")
-        self.get_logger().info("왼쪽 마우스 클릭으로 원본 영상에서 4개의 점을 선택하세요.")
-        self.get_logger().info("클릭 순서: 1.왼쪽 아래 -> 2.오른쪽 아래 -> 3.왼쪽 위 -> 4.오른쪽 위")
-        self.get_logger().info("'r' 키: 리셋 (선택한 모든 점 초기화)")
-        self.get_logger().info("'s' 키: BEV 파라미터 저장 후 종료")
-        self.get_logger().info("'q' 키: 종료 (저장 안 함)\n")
+        self.get_logger().info("Waiting for images from the ROS 2 topic...")
+        self.get_logger().info("Select four points on the original image with the left mouse button.")
+        self.get_logger().info("Click order: 1. left-bottom -> 2. right-bottom -> 3. left-top -> 4. right-top")
+        self.get_logger().info("'r' key: reset (clear selected points)")
+        self.get_logger().info("'s' key: save BEV parameters and exit")
+        self.get_logger().info("'q' key: exit without saving\n")
 
     def image_callback(self, msg):
-        """이미지 토픽을 수신하여 self.cv_image를 업데이트합니다."""
+        """Receive an image message and update self.cv_image."""
         try:
             np_arr = np.frombuffer(msg.data, np.uint8)
             self.cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         except Exception as e:
-            self.get_logger().error(f'이미지 디코딩 실패: {e}')
+            self.get_logger().error(f'Failed to decode image: {e}')
 
     def mouse_callback(self, event, x, y, flags, param):
-        """마우스 클릭 이벤트를 처리합니다."""
+        """Handle mouse click events."""
         node_instance = param  # self
         if event == cv2.EVENT_LBUTTONDOWN:
             if len(node_instance.src_points) < node_instance.max_points:
-                point_order = ["왼쪽 아래", "오른쪽 아래", "왼쪽 위", "오른쪽 위"]
+                point_order = ["Left-Bottom", "Right-Bottom", "Left-Top", "Right-Top"]
                 current_point_index = len(node_instance.src_points)
-                final_point = (x, y) # 사용자가 클릭한 (x, y) 좌표를 그대로 사용
+                final_point = (x, y) # Use the clicked (x, y) coordinates as-is
 
                 node_instance.src_points.append(final_point)
-                self.get_logger().info(f"[{point_order[current_point_index]}] 점 추가: {final_point} ({len(node_instance.src_points)}/{node_instance.max_points})")
+                self.get_logger().info(f"Added {point_order[current_point_index]} point: {final_point} ({len(node_instance.src_points)}/{node_instance.max_points})")
 
                 if len(node_instance.src_points) == node_instance.max_points:
-                    self.get_logger().info("4점 모두 선택 완료. 's'로 저장하거나 'r'로 리셋하세요.")
+                    self.get_logger().info("All four points selected. Press 's' to save or 'r' to reset.")
             else:
-                self.get_logger().warn("이미 4개의 점이 모두 선택되었습니다. 'r'로 리셋하거나 's'로 저장하세요.")
+                self.get_logger().warn("Four points are already selected. Press 'r' to reset or 's' to save.")
 
     def save_params(self):
-        """BEV 파라미터를 파일로 저장합니다."""
+        """Persist the BEV parameters to disk."""
         if len(self.src_points) < self.max_points:
-            self.get_logger().warn("4개의 점을 모두 선택해야 저장이 가능합니다.")
+            self.get_logger().warn("Select all four points before saving.")
             return False
 
-        self.get_logger().info("'s' 키 입력 -> BEV 파라미터 저장 후 종료")
+        self.get_logger().info("'s' pressed -> saving BEV parameters and exiting")
         
         dst_points_default = np.float32([
-            [0, self.warp_h],          # 왼 하단
-            [self.warp_w, self.warp_h],# 오른 하단
-            [0, 0],                    # 왼 상단
-            [self.warp_w, 0]           # 오른 상단
+            [0, self.warp_h],          # Left-bottom
+            [self.warp_w, self.warp_h],# Right-bottom
+            [0, 0],                    # Left-top
+            [self.warp_w, 0]           # Right-top
         ])
         
         src_arr = np.float32(self.src_points)
         
-        # NPZ 파일 저장
+        # Save NPZ file
         np.savez(self.out_npz_file,
                  src_points=src_arr,
                  dst_points=dst_points_default,
                  warp_w=self.warp_w,
                  warp_h=self.warp_h)
-        self.get_logger().info(f"'{self.out_npz_file}' 파일에 BEV 파라미터 저장 완료.")
+        self.get_logger().info(f"Saved BEV parameters to '{self.out_npz_file}'.")
 
-        # TXT 파일 저장
+        # Save TXT file
         point_labels = ["Left-Bottom", "Right-Bottom", "Left-Top", "Right-Top"]
         try:
             with open(self.out_txt_file, 'w') as f:
@@ -118,26 +118,26 @@ class BevParamSetterNode(Node):
                 f.write("# Order: Left-Bottom, Right-Bottom, Left-Top, Right-Top\n")
                 for i, point in enumerate(self.src_points):
                     f.write(f"{point[0]}, {point[1]} # {point_labels[i]}\n")
-            self.get_logger().info(f"'{self.out_txt_file}' 파일에 선택된 좌표 저장 완료.")
+            self.get_logger().info(f"Saved selected coordinates to '{self.out_txt_file}'.")
         except Exception as e:
-            self.get_logger().error(f"TXT 파일 저장 중 오류 발생: {e}")
+            self.get_logger().error(f"Failed to write TXT file: {e}")
             
         return True
 
     def run(self):
-        """메인 루프를 실행하여 ROS2 이벤트 처리 및 화면 갱신, 사용자 입력을 담당합니다."""
+        """Main loop: process ROS 2 events, refresh windows, and handle input."""
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.01)
 
             if self.cv_image is None:
                 if cv2.waitKey(1) & 0xFF == ord('q'):
-                    self.get_logger().info("'q' 키 입력 -> 종료")
+                    self.get_logger().info("'q' pressed -> exiting")
                     break
                 continue
 
             disp = self.cv_image.copy()
 
-            # 선택된 점과 라인 그리기
+            # Draw the selected points and connecting polygon
             point_labels = ["1 (L-Bot)", "2 (R-Bot)", "3 (L-Top)", "4 (R-Top)"]
             for i, pt in enumerate(self.src_points):
                 cv2.circle(disp, pt, 5, (0, 255, 0), -1)
@@ -149,7 +149,7 @@ class BevParamSetterNode(Node):
 
             cv2.imshow("Original", disp)
 
-            # BEV 변환 및 표시
+            # Compute and display the BEV projection
             bev_result = np.zeros((self.warp_h, self.warp_w, 3), dtype=np.uint8)
             if len(self.src_points) == 4:
                 src_np = np.float32(self.src_points)
@@ -161,23 +161,23 @@ class BevParamSetterNode(Node):
                 bev_result = cv2.warpPerspective(self.cv_image, M, (self.warp_w, self.warp_h))
             cv2.imshow("BEV", bev_result)
 
-            # 키 입력 처리
+            # Handle key input
             key = cv2.waitKey(30) & 0xFF
             if key == ord('q'):
-                self.get_logger().info("'q' 키 입력 -> 종료 (저장 안 함)")
+                self.get_logger().info("'q' pressed -> exiting without saving")
                 break
             elif key == ord('r'):
-                self.get_logger().info("'r' 키 입력 -> 4점 좌표 초기화")
+                self.get_logger().info("'r' pressed -> clearing all points")
                 self.src_points = []
             elif key == ord('s'):
                 if self.save_params():
-                    break  # 저장 성공 시 루프 종료
+                    break  # Exit loop after successful save
 
-        # 리소스 정리
+        # Clean up windows and ROS resources
         cv2.destroyAllWindows()
         self.destroy_node()
         rclpy.shutdown()
-        self.get_logger().info("bev_utils_ros2.py 종료.")
+        self.get_logger().info("bev_utils_ros2.py finished.")
 
 def main(args=None):
     rclpy.init(args=args)

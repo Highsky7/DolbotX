@@ -159,7 +159,7 @@ class YoloBevDrivableAreaNode(Node):
         publishers, subscribers, and the thread pool executor.
         """
         super().__init__('yolo_bev_drivable_area_node')
-        self.get_logger().info("--- YOLO BEV Drivable Area Planning Node (Hinton's Bézier Curve Architecture) ---")
+        self.get_logger().info("--- YOLO BEV drivable-area planning node (Bézier curve architecture) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 

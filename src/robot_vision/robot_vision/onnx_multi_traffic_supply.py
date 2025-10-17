@@ -75,7 +75,7 @@ class YoloVisionNode(Node):
           one-time subscription to get the RealSense camera's intrinsics.
         """
         super().__init__('yolo_traffic_node_no_qos_optimized')
-        self.get_logger().info("--- YOLO Vision Node (Guido's Optimized, Hinton's Refinement V4) ---")
+        self.get_logger().info("--- YOLO vision node (multi-camera pipeline v4) ---")
 
         self.realsense_lock = threading.Lock()
         self.usb_cam_locks = {'cam1': threading.Lock(), 'cam2': threading.Lock()}
@@ -457,8 +457,7 @@ class YoloVisionNode(Node):
 
             if self.detection_counter >= self.DETECTION_THRESHOLD:
 
-                # [Hinton's Update V2 for Stop Condition]
-                # Change the stop condition from Euclidean distance to Z-axis coordinate.
+                # Stop-condition update v2: rely on the Z-axis position instead of Euclidean distance.
                 z_coord = transformed_position[2]
 
                 # Only perform coordinate-based checks if a service call is not already in progress.

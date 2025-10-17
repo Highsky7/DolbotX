@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 # FILE: marker_uniform_node.py
 # DESCRIPTION:
-# 이 노드는 USB 카메라를 사용하여 비전 마커와 군복을 인식하는 역할을 전담합니다.
-# 아군('ROKA')과 적군('Enemy')을 식별하여 '/led_control' 토픽을 통해
-# 외부 장치(예: LED)가 현재 상황을 표시할 수 있도록 신호를 발행합니다.
+# This node uses USB cameras to detect vision markers and uniforms.
+# It distinguishes friendly ("ROKA") and enemy units and publishes to the
+# '/led_control' topic so an external device (e.g., an LED) can display status.
 
 import rclpy
 from rclpy.node import Node
@@ -43,7 +43,7 @@ class MarkerUniformNode(Node):
             self.get_logger().error(f"Failed to load YOLO model: {e}")
             self.destroy_node(); return
 
-        # 퍼블리셔 설정
+        # Publisher setup
         self.led_pub = self.create_publisher(String, '/led_control', 10)
         self.usb_cam1_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam1_marker/viz/compressed', 10)
         self.usb_cam2_viz_pub = self.create_publisher(CompressedImage, '/unified_vision/usb_cam2_marker/viz/compressed', 10)
@@ -51,7 +51,7 @@ class MarkerUniformNode(Node):
         self.yolo_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='marker_worker')
         self._is_shutting_down = False
 
-        # 구독자 설정
+        # Subscriber setup
         usb_cam1_topic = 'camera1/image_raw/compressed'
         self.usb_cam1_sub = self.create_subscription(
             CompressedImage, usb_cam1_topic, lambda msg: self.usb_cam_callback(msg, 'cam1'), 10)
@@ -82,7 +82,7 @@ class MarkerUniformNode(Node):
                 self.get_logger().warn(f"Failed to decompress USB cam image from {camera_id}.")
                 return
 
-            # 마커 탐지
+            # Run marker detection
             results_marker = self.marker_model(cv_image, conf=0.5, iou=0.45, verbose=False, half=self.use_half)
             roka_found, enemy_found = False, False
             for r in results_marker:
@@ -91,11 +91,11 @@ class MarkerUniformNode(Node):
                     if label == 'ROKA': roka_found = True
                     elif label == 'Enemy': enemy_found = True
             
-            # LED 제어 메시지 발행 (ROKA 우선)
+            # Publish LED command (ROKA takes precedence)
             led_data = "roka" if roka_found else "enemy" if enemy_found else "none"
             self.led_pub.publish(String(data=led_data))
             
-            # 시각화 이미지 생성 및 발행
+            # Render and publish visualization frames
             annotated_image = self.draw_marker_detections(cv_image, results_marker)
             viz_publisher = self.usb_cam1_viz_pub if camera_id == 'cam1' else self.usb_cam2_viz_pub
             self.publish_compressed_viz(viz_publisher, annotated_image)

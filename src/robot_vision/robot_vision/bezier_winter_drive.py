@@ -128,7 +128,7 @@ class YoloBevFusedDrivableAreaNode(Node):
         and creates publishers, subscribers, and the thread pool executor.
         """
         super().__init__('yolo_bev_fused_drivable_area_node')
-        self.get_logger().info("--- YOLO BEV Fused Drivable Area Node (Hinton's Bézier Curve Fusion Architecture) ---")
+        self.get_logger().info("--- YOLO BEV fused drivable-area node (Bézier curve fusion architecture) ---")
         self.bridge = CvBridge()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
