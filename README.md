@@ -14,7 +14,7 @@ The system is built to run on a distributed computing system, typically between 
     - **Fall:** Detects and follows a series of visual markers (`A`, `E`, `Heart`, etc.).
     - **Winter:** Navigates snowy environments by identifying the drivable path from a fusion of standard track and snow segmentation.
 - **Object Following:** Tracks and follows a Unitree Go2 robot using a learned model of its rear profile, maintaining a set distance using depth data.
-- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths, even when multiple drivable regions coexist in the frame (see the demonstration GIFs below).
+- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths, even when multiple drivable regions coexist in the frame (see the demonstration gallery below, including a YouTube Short for multi-area driving).
 - **Multi-Camera System:** Integrates several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
 - **Hardware Integration:** Communicates with Arduino controllers for low-level wheel and LED control.
 
@@ -37,19 +37,21 @@ The `robot_vision` package is the core of the robot's autonomous capabilities. I
 #### Demonstration Gallery
 
 <p align="center">
+  <img src="competition_result.gif" alt="Competition run visualization" height="360">
+</p>
+<p align="center"><em>Competition run: end-to-end perception and planning performance from the `robot_vision/bezier_*_drive.py` pipeline.</em></p>
+
+<p align="center">
   <img src="single_area.gif" alt="Single-area drive visualization" height="360">
 </p>
 <p align="center"><em>Single-area drive: a `robot_vision` `~drive.py` node maintaining a smooth path through a single drivable corridor.</em></p>
 
 <p align="center">
-  <img src="multi_area.gif" alt="Multi-area drive visualization" height="360">
+  <a href="https://youtube.com/shorts/69BXtWKU-2o?si=P_e7tiKzJTd6eniV" target="_blank" rel="noopener">
+    <img src="https://img.youtube.com/vi/69BXtWKU-2o/hqdefault.jpg" alt="Multi-area drive YouTube Short" height="360">
+  </a>
 </p>
-<p align="center"><em>Multi-area drive: the same planning stack gracefully transitions across multiple drivable regions without mode changes.</em></p>
-
-<p align="center">
-  <img src="competition_result.gif" alt="Competition run visualization" height="360">
-</p>
-<p align="center"><em>Competition run: end-to-end perception and planning performance from the `robot_vision/bezier_*_drive.py` pipeline.</em></p>
+<p align="center"><em>Multi-area drive: watch the same planning stack adapt across multiple drivable regions via YouTube Shorts.</em></p>
 
 #### Architectural Highlights:
 
