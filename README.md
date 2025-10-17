@@ -14,7 +14,7 @@ The system is built to run on a distributed computing system, typically between 
     - **Fall:** Detects and follows a series of visual markers (`A`, `E`, `Heart`, etc.).
     - **Winter:** Navigates snowy environments by identifying the drivable path from a fusion of standard track and snow segmentation.
 - **Object Following:** Tracks and follows a Unitree Go2 robot using a learned model of its rear profile, maintaining a set distance using depth data.
-- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths.
+- **Drivable Area Segmentation:** Utilizes both Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces. It supports various terrains like colored tracks, sand, gravel, and snow by generating and following paths, even when multiple drivable regions coexist in the frame (see [`single_area.mp4`](single_area.mp4) and [`multi_area.mp4`](multi_area.mp4)).
 - **Multi-Camera System:** Integrates several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
 - **Hardware Integration:** Communicates with Arduino controllers for low-level wheel and LED control.
 
@@ -33,6 +33,12 @@ This ROS2 workspace is organized into several key packages:
 ### In-Depth: The `robot_vision` Package
 
 The `robot_vision` package is the core of the robot's autonomous capabilities. It is designed for high performance in a real-time, distributed computing environment.
+
+#### Demonstration Videos
+
+- [`single_area.mp4`](single_area.mp4): Showcases a `robot_vision` `~drive.py` node handling a single drivable area with smooth, reliable path generation.
+- [`multi_area.mp4`](multi_area.mp4): Highlights how the same family of `robot_vision` `~drive.py` nodes generalize to multiple drivable regions without manual mode switching.
+- [`competition_result.mp4`](competition_result.mp4): Captures the competition run produced by the `robot_vision/bezier_*_drive.py` nodes, demonstrating end-to-end perception and planning performance.
 
 #### Architectural Highlights:
 
