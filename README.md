@@ -37,17 +37,17 @@ The `robot_vision` package is the core of the robot's autonomous capabilities. I
 #### Demonstration Gallery
 
 <p align="center">
-  <img src="single_area.gif" alt="Single-area drive visualization" width="640">
+  <img src="single_area.gif" alt="Single-area drive visualization" width="640" style="max-height:360px;">
 </p>
 <p align="center"><em>Single-area drive: a `robot_vision` `~drive.py` node maintaining a smooth path through a single drivable corridor.</em></p>
 
 <p align="center">
-  <img src="multi_area.gif" alt="Multi-area drive visualization" width="640">
+  <img src="multi_area.gif" alt="Multi-area drive visualization" width="640" style="max-height:360px;">
 </p>
 <p align="center"><em>Multi-area drive: the same planning stack gracefully transitions across multiple drivable regions without mode changes.</em></p>
 
 <p align="center">
-  <img src="competition_result.gif" alt="Competition run visualization" width="640">
+  <img src="competition_result.gif" alt="Competition run visualization" width="640" style="max-height:360px;">
 </p>
 <p align="center"><em>Competition run: end-to-end perception and planning performance from the `robot_vision/bezier_*_drive.py` pipeline.</em></p>
 
@@ -113,6 +113,41 @@ This will install `ultralytics` with specific versions of `numpy` and `pyrealsen
     # Development build
     colcon build --symlink-install
     ```
+
+### Data Collection Workflow
+
+DolbotX는 멀티 카메라 영상과 센서 스트림을 동시에 수집하도록 설계되어 있습니다. 다음 절차를 통해 데이터셋을 생성하세요.
+
+1. **터미널 1 – 수집 노드 실행**
+   ```bash
+   ros2 run robot_vision unified_recorder.py
+   ```
+   센서 메타데이터와 동기화 신호를 기록합니다.
+
+2. **터미널 2 – ROS bag 레코더 구동**
+   ```bash
+   ros2 bag record \
+   /camera3/image_raw/compressed \
+   /camera/color/camera_info \
+   /camera/color/image_raw/compressed \
+   /camera/aligned_depth_to_color/image_raw \
+   /camera1/image_raw/compressed \
+   /camera2/image_raw/compressed \
+   /tf \
+   /tf_static \
+   -o my_robot_run_$(date +%Y-%m-%d-%H-%M-%S) \
+   -s mcap \
+   --compression-mode file \
+   --compression-format zstd
+   ```
+   기본적으로 MCAP 포맷과 Zstd 압축을 사용해 저장 공간과 재생 속도를 모두 확보합니다.
+
+3. **터미널 3 – H.264 변환 파이프라인 실행**
+   ```bash
+   cd src/robot_vision/robot_vision/utils
+   python h264_converter.py
+   ```
+   저장된 영상 토픽을 고효율 코덱으로 변환해 후처리 및 주석 작업을 단순화합니다.
 
 ## Usage
 
