@@ -44,7 +44,7 @@ The `robot_vision` package is the core of the robot's autonomous capabilities. I
 <p align="center">
   <img src="single_area.gif" alt="Single-area drive visualization" height="360">
 </p>
-<p align="center"><em>Single-area drive: a `robot_vision` `~drive.py` node maintaining a smooth path through a single drivable corridor.</em></p>
+<p align="center"><em>Single-area drive: a `robot_vision` `(seasonal)_drive.py` node maintaining a smooth path through a single drivable corridor.</em></p>
 
 <p align="center">
   <a href="https://youtube.com/shorts/69BXtWKU-2o?si=P_e7tiKzJTd6eniV" target="_blank" rel="noopener">
