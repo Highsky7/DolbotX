@@ -145,7 +145,8 @@ class YoloBevFusedDrivableAreaNode(Node):
         self.declare_parameter('lookahead_distance', 0.66)
 
         # Get Parameters
-        params = {name: self.get_parameter(name).get_parameter_value() for name in self.get_parameters_and_include_prefix('')}
+        param_names = list(self.get_parameters_by_prefix('').keys())
+        params = {name: self.get_parameter(name).get_parameter_value() for name in param_names}
 
         self.drive_area_confidence = params['drive_area_confidence'].double_value
         self.sand_confidence = params['sand_confidence'].double_value
