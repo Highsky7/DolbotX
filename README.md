@@ -31,10 +31,10 @@ The system operates on a distributed computing architecture, typically split bet
 ## Core Features
 
 - **Seasonal Vision Algorithms:**
-    - **Spring (Friend-or-Foe):** Identifies allied ("ROKA") vs. enemy units from military uniform data and controls an LED indicator accordingly.
-    - **Summer (Multi-Task):** Concurrently recognizes traffic lights to issue 'stop'/'go' commands and detects supply boxes to trigger collection actions.
-    - **Fall (Marker Following):** Detects and follows a sequence of visual markers (`A`, `E`, `Heart`, etc.).
-    - **Winter (Snow Navigation):** Navigates snowy terrain by identifying a clear path from a fusion of standard track and snow segmentation.
+  - **Spring (Friend-or-Foe):** Identifies allied ("ROKA") vs. enemy units from military uniform data and controls an LED indicator accordingly.
+  - **Summer (Multi-Task):** Concurrently recognizes traffic lights to issue 'stop'/'go' commands and detects supply boxes to trigger collection actions.
+  - **Fall (Marker Following):** Detects and follows a sequence of visual markers (`A`, `E`, `Heart`, etc.).
+  - **Winter (Snow Navigation):** Navigates snowy terrain by identifying a clear path from a fusion of standard track and snow segmentation.
 - **Object Following:** Tracks and follows a Unitree Go2 robot using a model of its rear profile, maintaining a precise distance with depth data.
 - **Drivable Area Segmentation:** Utilizes Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces across various terrains (colored tracks, sand, gravel, snow). It generates and follows smooth paths, even with multiple drivable regions in the frame.
 - **Multi-Camera Integration:** Fuses data from several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
@@ -57,11 +57,11 @@ This ROS2 workspace is organized into the following key packages:
 The `robot_vision` package is the perception core of the robot, optimized for real-time performance in a distributed environment.
 
 - **Architectural Highlights:**
-    - **ONNX Model Inference:** Leverages the ONNX (Open Neural Network Exchange) format for high-speed, hardware-accelerated inference on the NVIDIA Jetson.
-    - **Multithreaded Design:** ROS2 nodes use a multi-threaded architecture where the main thread handles message passing and worker threads perform intensive computations (e.g., inference, image processing). This ensures the ROS2 communication layer remains responsive.
+  - **ONNX Model Inference:** Leverages the ONNX (Open Neural Network Exchange) format for high-speed, hardware-accelerated inference on the NVIDIA Jetson.
+  - **Multithreaded Design:** ROS2 nodes use a multi-threaded architecture where the main thread handles message passing and worker threads perform intensive computations (e.g., inference, image processing). This ensures the ROS2 communication layer remains responsive.
 - **Seasonal & Planning Nodes:**
-    - **Vision Nodes:** `spring_vision.py`, `summer_vision.py`, `fall_vision.py`, and `unitree_tracker.py` handle mission-specific perception tasks.
-    - **Path Planning Nodes:** `bezier_*_drive.py` nodes perform segmentation in BEV and generate smooth paths using Bézier curves, while `nobev_*_drive.py` nodes offer a simplified alternative operating directly in the camera's image space.
+  - **Vision Nodes:** `spring_vision.py`, `summer_vision.py`, `fall_vision.py`, and `unitree_tracker.py` handle mission-specific perception tasks.
+  - **Path Planning Nodes:** `bezier_*_drive.py` nodes perform segmentation in BEV and generate smooth paths using Bézier curves, while `nobev_*_drive.py` nodes offer a simplified alternative operating directly in the camera's image space.
 
 ### In-Depth: `Arduino` Sketches
 
@@ -74,12 +74,14 @@ The `robot_vision` package is the perception core of the robot, optimized for re
 ### Prerequisites
 
 **Hardware:**
+
 - NVIDIA Jetson Orin Nano
 - Cameras: Logitech C922 Pro, Abko APC 850, Topsync TS-B7WQ3O
 - Intel RealSense D435i Depth Camera
 - Arduino Mega (Wheel Control) & Arduino Uno (LED Control)
 
 **Software:**
+
 - ROS2 Humble
 - Python 3.10+
 - `colcon` build tool
@@ -92,38 +94,42 @@ The `robot_vision` package is the perception core of the robot, optimized for re
 ### Dependencies
 
 Install the required Python packages using the provided file:
+
 ```bash
 pip install -r requirements.txt
 ```
+
 This will install `ultralytics` along with specific versions of `numpy` and `pyrealsense2`.
 
 ### Installation
 
-1.  Clone this repository.
-2.  Source your ROS2 installation:
-    ```bash
-    source /opt/ros/humble/setup.bash
-    ```
-3.  Build the workspace. Use `--symlink-install` for active Python development to avoid rebuilding after every change.
-    ```bash
-    # Standard build
-    colcon build
+1. Clone this repository.
+2. Source your ROS2 installation:
+   ```bash
+   source /opt/ros/humble/setup.bash
+   ```
+3. Build the workspace. Use `--symlink-install` for active Python development to avoid rebuilding after every change.
+   ```bash
+   # Standard build
+   colcon build
 
-    # Development build
-    colcon build --symlink-install
-    ```
+   # Development build
+   colcon build --symlink-install
+   ```
 
 ## Data Collection Workflow
 
 DolbotX can record synchronized RGB, depth, and pose streams. Use the following three-terminal routine to create a dataset for post-processing.
 
 1. **Terminal 1 – Launch Recorder Node**
+
    ```bash
    ros2 run robot_vision unified_recorder.py
    ```
-   *This captures metadata and timing signals to ensure all topics remain aligned.*
 
+   *This captures metadata and timing signals to ensure all topics remain aligned.*
 2. **Terminal 2 – Start ROS Bag Recording**
+
    ```bash
    ros2 bag record \
    /camera3/image_raw/compressed \
@@ -139,13 +145,15 @@ DolbotX can record synchronized RGB, depth, and pose streams. Use the following 
    --compression-mode file \
    --compression-format zstd
    ```
-   *MCAP with Zstd compression offers a good balance between file size and playback speed.*
 
+   *MCAP with Zstd compression offers a good balance between file size and playback speed.*
 3. **Terminal 3 – Run H.264 Converter**
+
    ```bash
    cd src/robot_vision/robot_vision/utils
    python h264_converter.py
    ```
+
    *This transcodes recorded image topics into an efficient H.264 format for labeling and analysis.*
 
 ## Usage
@@ -192,34 +200,87 @@ The robot's operation is modular. Run the following nodes in separate terminals.
 
 ### 3. Launch a Mission
 
-Choose one of the following missions to run. Each seasonal mission offers two `Drive Node` options depending on the terrain.
-
-- **Standard Drive (`..._drive`):** Use for simple, flat surfaces.
-- **Bézier Drive (`bezier_..._drive`):** Use for complex surfaces with ramps, as seen in the competition demo. This node uses a more advanced path planner.
+Choose one of the following missions to run. Each mission requires launching nodes in separate terminals.
 
 #### Spring Mission
-- **Vision Node:** `ros2 run robot_vision spring_vision`
-- **Drive Node:**
-  - *Flat Ground:* `ros2 run robot_vision springfall_drive`
-  - *Ramps/Complex Terrain:* `ros2 run robot_vision bezier_springfall_drive`
+
+1.  **Terminal 1: Launch Vision Node**
+    ```bash
+    ros2 run robot_vision spring_vision
+    ```
+2.  **Terminal 2: Launch Drive Node**
+
+    *Choose one depending on the terrain.*
+
+    - For **flat ground**:
+      ```bash
+      ros2 run robot_vision springfall_drive
+      ```
+    - For **ramps/complex terrain**:
+      ```bash
+      ros2 run robot_vision bezier_springfall_drive
+      ```
 
 #### Summer Mission
-- **Vision Node:** `ros2 run robot_vision summer_vision`
-- **Drive Node:**
-  - *Flat Ground:* `ros2 run robot_vision summer_drive`
-  - *Ramps/Complex Terrain:* `ros2 run robot_vision bezier_summer_drive`
+
+1.  **Terminal 1: Launch Vision Node**
+    ```bash
+    ros2 run robot_vision summer_vision
+    ```
+2.  **Terminal 2: Launch Drive Node**
+
+    *Choose one depending on the terrain.*
+
+    - For **flat ground**:
+      ```bash
+      ros2 run robot_vision summer_drive
+      ```
+    - For **ramps/complex terrain**:
+      ```bash
+      ros2 run robot_vision bezier_summer_drive
+      ```
 
 #### Fall Mission
-- **Vision Node:** `ros2 run robot_vision fall_vision`
-- **Drive Node:**
-  - *Flat Ground:* `ros2 run robot_vision springfall_drive`
-  - *Ramps/Complex Terrain:* `ros2 run robot_vision bezier_springfall_drive`
+
+1.  **Terminal 1: Launch Vision Node**
+    ```bash
+    ros2 run robot_vision fall_vision
+    ```
+2.  **Terminal 2: Launch Drive Node**
+
+    *Choose one depending on the terrain.*
+
+    - For **flat ground**:
+      ```bash
+      ros2 run robot_vision springfall_drive
+      ```
+    - For **ramps/complex terrain**:
+      ```bash
+      ros2 run robot_vision bezier_springfall_drive
+      ```
 
 #### Winter Mission
-- **Drive Node:**
-  - *Flat Ground:* `ros2 run robot_vision winter_drive`
-  - *Ramps/Complex Terrain:* `ros2 run robot_vision bezier_winter_drive`
+
+- **Launch Drive Node**
+
+  *Choose one depending on the terrain.*
+
+  - For **flat ground**:
+    ```bash
+    ros2 run robot_vision winter_drive
+    ```
+  - For **ramps/complex terrain**:
+    ```bash
+    ros2 run robot_vision bezier_winter_drive
+    ```
 
 #### Object Follower Mission
-- **Tracker Node:** `ros2 run robot_vision unitree_tracker`
-- **Follower Launch:** `ros2 launch object_follower object_follower.launch.py`
+
+1.  **Terminal 1: Launch Tracker Node**
+    ```bash
+    ros2 run robot_vision unitree_tracker
+    ```
+2.  **Terminal 2: Launch Follower**
+    ```bash
+    ros2 launch object_follower object_follower.launch.py
+    ```
