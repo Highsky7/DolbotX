@@ -74,7 +74,6 @@ def morph_close(binary_mask, ksize=5):
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
     return cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
 
-
 def remove_small_components(binary_mask, min_size=300):
     """
     Remove small connected components from a binary mask.
@@ -231,7 +230,14 @@ class YoloBevFusedDrivableAreaNode(Node):
 
             if self.viz_pub.get_subscription_count() > 0:
                 final_viz_angle = steering_angle_rad if steering_angle_rad is not None else 0.0
-                self.publish_visualization(bev_image, filtered_mask, viz_data, final_viz_angle)
+                self.publish_visualization(
+                    bev_image,
+                    viz_data,
+                    final_viz_angle,
+                    drive_area_mask=drive_area_mask,
+                    sand_mask=sand_mask,
+                    stone_mask=stone_mask
+                )
         except Exception:
             self.get_logger().error(f"Error in planning worker:\n{traceback.format_exc()}")
 
@@ -359,22 +365,37 @@ class YoloBevFusedDrivableAreaNode(Node):
 
         return None, viz_data
 
-    def publish_visualization(self, bev_image, area_mask, viz_data, steering_angle_rad):
+    def publish_visualization(self, bev_image, viz_data, steering_angle_rad,
+                              drive_area_mask=None, sand_mask=None, stone_mask=None):
         """
-        Create and publish a visualization image.
-
-        Note: The implementation is identical to the non-fused version.
+        Create and publish a visualization image with colored masks.
 
         Args:
             bev_image (np.ndarray): The base BEV image.
-            area_mask (np.ndarray): The binary mask of the drivable area.
             viz_data (dict): A dictionary containing all visualization elements.
             steering_angle_rad (float): The final steering angle in radians.
+            drive_area_mask (np.ndarray, optional): Mask for the general drivable area.
+            sand_mask (np.ndarray, optional): Mask for sand areas.
+            stone_mask (np.ndarray, optional): Mask for stone areas.
         """
         viz_image = bev_image.copy()
-        green_overlay = np.zeros_like(viz_image)
-        green_overlay[area_mask > 0] = (0, 255, 0)
-        viz_image = cv2.addWeighted(viz_image, 1, green_overlay, 0.4, 0)
+        color_overlay = np.zeros_like(viz_image)
+
+        # Define colors in BGR format
+        drive_color = (0, 255, 0)   # Green
+        sand_color = (0, 255, 0)  # Green
+        stone_color = (0, 0, 255)   # Red
+
+        # Apply colors to the overlay. Order matters for overlapping areas.
+        if drive_area_mask is not None:
+            color_overlay[drive_area_mask > 0] = drive_color
+        if sand_mask is not None:
+            color_overlay[sand_mask > 0] = sand_color
+        if stone_mask is not None:
+            color_overlay[stone_mask > 0] = stone_color
+
+        # Blend the colored overlay with the original BEV image
+        viz_image = cv2.addWeighted(viz_image, 1, color_overlay, 0.4, 0)
 
         if 'roi_coords' in viz_data:
             x1, y1, x2, y2 = viz_data['roi_coords']
