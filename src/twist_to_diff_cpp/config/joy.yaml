@@ -1,0 +1,6 @@
+joy_node:
+  ros__parameters:
+    dev: /dev/input/js0   # 필요 시 js 번호 맞추기
+    deadzone: 0.15        # 축 데드존 (전역)
+    autorepeat_rate: 20.0 # 눌린 상태에서 반복 발행(Hz)
+

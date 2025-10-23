@@ -1,0 +1,8 @@
+wheel_serial_bridge_unified:
+  ros__parameters:
+    port: /dev/ttyACM0
+    baud: 57600
+    tx_rate_hz: 50.0
+    idle_timeout_ms: 200
+    reopen_interval_ms: 1000
+

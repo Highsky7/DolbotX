@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>twist_to_diff_cpp</name>
+  <version>0.1.0</version>
+  <description>Diff drive 변환 노드 (C++): /cmd_vel → 좌/우 바퀴 속도</description>
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>MIT</license>
+
+  
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+
