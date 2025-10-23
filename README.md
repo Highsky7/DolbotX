@@ -202,64 +202,94 @@ The robot's operation is modular. Run the following nodes in separate terminals.
 
 Choose one of the following missions to run. Each mission requires launching nodes in separate terminals.
 
+Before starting a seasonal mission, ensure the following core components are running:
+
+- **Steering to Differential Drive Converter:**
+  ```bash
+  ros2 launch steering_to_diff steering_to_diff.launch.py
+  ```
+- **Wheel Serial Bridge (Arduino Mega):**
+  ```bash
+  ros2 launch wheel_serial_bridge bridge.launch.py
+  ```
+
 #### Spring Mission
 
-1.  **Terminal 1: Launch Vision Node**
-    ```bash
-    ros2 run robot_vision spring_vision
-    ```
-2.  **Terminal 2: Launch Drive Node**
+<p align="center">
+  <img src="spring_node.png" alt="Spring Mission Node Graph" width="600">
+</p>
 
-    *Choose one depending on the terrain.*
+1. **Terminal 1: Launch Vision Node**
 
-    - For **flat ground**:
-      ```bash
-      ros2 run robot_vision springfall_drive
-      ```
-    - For **ramps/complex terrain**:
-      ```bash
-      ros2 run robot_vision bezier_springfall_drive
-      ```
+   ```bash
+   ros2 run robot_vision spring_vision
+   ```
+2. **Terminal 2: Launch Drive Node**
+
+   *Choose one depending on the terrain.*
+
+   - For **flat ground**:
+     ```bash
+     ros2 run robot_vision springfall_drive
+     ```
+   - For **ramps/complex terrain**:
+     ```bash
+     ros2 run robot_vision bezier_springfall_drive
+     ```
 
 #### Summer Mission
 
-1.  **Terminal 1: Launch Vision Node**
-    ```bash
-    ros2 run robot_vision summer_vision
-    ```
-2.  **Terminal 2: Launch Drive Node**
+<p align="center">
+  <img src="summer_node.png" alt="Summer Mission Node Graph" width="600">
+</p>
 
-    *Choose one depending on the terrain.*
+1. **Terminal 1: Launch Vision Node**
 
-    - For **flat ground**:
-      ```bash
-      ros2 run robot_vision summer_drive
-      ```
-    - For **ramps/complex terrain**:
-      ```bash
-      ros2 run robot_vision bezier_summer_drive
-      ```
+   ```bash
+   ros2 run robot_vision summer_vision
+   ```
+2. **Terminal 2: Launch Drive Node**
+
+   *Choose one depending on the terrain.*
+
+   - For **flat ground**:
+     ```bash
+     ros2 run robot_vision summer_drive
+     ```
+   - For **ramps/complex terrain**:
+     ```bash
+     ros2 run robot_vision bezier_summer_drive
+     ```
 
 #### Fall Mission
 
-1.  **Terminal 1: Launch Vision Node**
-    ```bash
-    ros2 run robot_vision fall_vision
-    ```
-2.  **Terminal 2: Launch Drive Node**
+<p align="center">
+  <img src="fall_node.png" alt="Fall Mission Node Graph" width="600">
+</p>
 
-    *Choose one depending on the terrain.*
+1. **Terminal 1: Launch Vision Node**
 
-    - For **flat ground**:
-      ```bash
-      ros2 run robot_vision springfall_drive
-      ```
-    - For **ramps/complex terrain**:
-      ```bash
-      ros2 run robot_vision bezier_springfall_drive
-      ```
+   ```bash
+   ros2 run robot_vision fall_vision
+   ```
+2. **Terminal 2: Launch Drive Node**
+
+   *Choose one depending on the terrain.*
+
+   - For **flat ground**:
+     ```bash
+     ros2 run robot_vision springfall_drive
+     ```
+   - For **ramps/complex terrain**:
+     ```bash
+     ros2 run robot_vision bezier_springfall_drive
+     ```
 
 #### Winter Mission
+
+<p align="center">
+  <img src="winter_node.png" alt="Winter Mission Node Graph" width="600">
+</p>
 
 - **Launch Drive Node**
 
@@ -276,11 +306,11 @@ Choose one of the following missions to run. Each mission requires launching nod
 
 #### Object Follower Mission
 
-1.  **Terminal 1: Launch Tracker Node**
-    ```bash
-    ros2 run robot_vision unitree_tracker
-    ```
-2.  **Terminal 2: Launch Follower**
-    ```bash
-    ros2 launch object_follower object_follower.launch.py
-    ```
+1. **Terminal 1: Launch Tracker Node**
+   ```bash
+   ros2 run robot_vision unitree_tracker
+   ```
+2. **Terminal 2: Launch Follower**
+   ```bash
+   ros2 launch object_follower object_follower.launch.py
+   ```
