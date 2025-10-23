@@ -83,7 +83,7 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("contrast", -1);    // 0-255, -1 "leave alone"
   this->declare_parameter("saturation", -1);  // 0-255, -1 "leave alone"
   this->declare_parameter("sharpness", -1);   // 0-255, -1 "leave alone"
-  this.declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
+  this->declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
   this->declare_parameter("auto_white_balance", true);
   this->declare_parameter("white_balance", 4000);
   this->declare_parameter("autoexposure", true);
