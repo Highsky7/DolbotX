@@ -1,46 +1,32 @@
-# DolbotX
+<p align="center">
+  <img src="results/Dolbat.png" alt="DolbotX Logo" width="600">
+</p>
+
+<h1 align="center">DolbotX</h1>
+
+<p align="center">
+  <strong>A versatile autonomous robot platform for complex perception and navigation challenges.</strong>
+  <br>
+  2nd Place Winner & Hanwha Aerospace Award Recipient at the 2025 Army Chief of Staff Cup.
+</p>
+
+<p align="center">
+  <a href="#core-features">Core Features</a> •
+  <a href="#visualizations">Visualizations</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#workspace-structure">Workspace Structure</a>
+</p>
+
+## Introduction
+
+The DolbotX repository was initially developed to tackle the five missions of The 2025 Army Chief of Staff Cup National Defense Robot Competition. The project documented here was instrumental in our team achieving **2nd Place in the National Defense Robot Division** and earning the **Hanwha National Defense Robot Award**, sponsored by Hanwha Aerospace.
 
 ## Overview
 
 DolbotX is a versatile autonomous robot platform built on ROS2, engineered for complex perception and navigation challenges. The robot is designed to excel in a variety of simulated "seasonal" environments (Spring, Summer, Fall, Winter), a robot tracking mission, and a target-following mode for a Unitree Go2.
 
 The system operates on a distributed computing architecture, typically split between a host laptop and an NVIDIA Jetson. It integrates multiple cameras, including an Intel RealSense depth camera, and interfaces with Arduino-based controllers for precise wheel motion and LED status indicators.
-
-## DolbotX: Real-world Demonstration
-
-<p align="center">
-  <img src="results/competition_result.gif" alt="Competition run visualization" height="360">
-  <br>
-  <em><strong>Competition Run:</strong> End-to-end perception and planning from the <code>robot_vision/bezier_(season)_drive.py</code> pipeline.</em>
-</p>
-
-<p align="center">
-  <img src="results/single_area.gif" alt="Single-area drive visualization" height="360">
-  <br>
-  <em><strong>Single-Area Drive:</strong> A <code>robot_vision/(season)_drive.py</code> node navigating a smooth path through a single drivable corridor.</em>
-</p>
-
-<p align="center">
-  <a href="https://youtube.com/shorts/69BXtWKU-2o?si=P_e7tiKzJTd6eniV" target="_blank" rel="noopener">
-    <img src="https://img.youtube.com/vi/69BXtWKU-2o/hqdefault.jpg" alt="Multi-area drive YouTube Short" height="360">
-  </a>
-  <br>
-  <em><strong>Multi-Area Drive:</strong> Watch the planning stack adapt across multiple drivable regions on YouTube Shorts.</em>
-</p>
-
-## Visualizations
-
-<p align="center">
-  <img src="results/vision_marker.gif" alt="Vision Marker Following" height="360">
-  <br>
-  <em><strong>Vision Marker Following:</strong> The robot identifying and navigating towards a sequence of visual markers.</em>
-</p>
-
-<p align="center">
-  <img src="results/roka_enemy.gif" alt="ROKA/Enemy Detection" height="360">
-  <br>
-  <em><strong>ROKA/Enemy Detection:</strong> The robot distinguishing between allied (ROKA) and enemy units.</em>
-</p>
 
 ## Core Features
 
@@ -53,6 +39,48 @@ The system operates on a distributed computing architecture, typically split bet
 - **Drivable Area Segmentation:** Utilizes Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces across various terrains (colored tracks, sand, gravel, snow). It generates and follows smooth paths, even with multiple drivable regions in the frame.
 - **Multi-Camera Integration:** Fuses data from several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
 - **Hardware Integration:** Employs robust serial communication with Arduino controllers for low-level wheel and LED control.
+
+## Visualizations
+
+<p align="center">
+  <em><strong>Competition Run:</strong> End-to-end perception and planning from the <code>robot_vision/bezier_(season)_drive.py</code> pipeline.</em>
+  <br>
+  <img src="results/competition_result.gif" alt="Competition run visualization" height="360">
+</p>
+
+<p align="center">
+  <em><strong>Single-Area Drive:</strong> A <code>robot_vision/(season)_drive.py</code> node navigating a smooth path through a single drivable corridor.</em>
+  <br>
+  <img src="results/single_area.gif" alt="Single-area drive visualization" height="360">
+</p>
+
+<p align="center">
+  <em><strong>Multi-Area Drive:</strong> Watch the
+  <code>robot_vision/(season)_drive.py</code> node's
+ planning stack adapt across multiple drivable regions on YouTube Shorts.</em>
+  <br>
+  <a href="https://youtube.com/shorts/69BXtWKU-2o?si=P_e7tiKzJTd6eniV" target="_blank" rel="noopener">
+    <img src="https://img.youtube.com/vi/69BXtWKU-2o/hqdefault.jpg" alt="Multi-area drive YouTube Short" height="360">
+  </a>
+</p>
+
+<p align="center">
+  <em><strong>Vision Marker Following:</strong> Result of the <code>robot_vision/fall_vision.py</code> node, identifying and navigating towards a sequence of visual markers.</em>
+  <br>
+  <img src="results/vision_marker.gif" alt="Vision Marker Following" height="360">
+</p>
+
+<p align="center">
+  <em><strong>ROKA/Enemy Detection:</strong> Result of the <code>robot_vision/spring_vision.py</code> node, distinguishing between allied (ROKA) and enemy units.</em>
+  <br>
+  <img src="results/roka_enemy.gif" alt="ROKA/Enemy Detection" height="360">
+</p>
+
+<p align="center">
+  <em><strong>Unitree Go2 Tracking:</strong> The <code>robot_vision/unitree_tracker.py</code> node tracks the Unitree Go2 robot and visualizes the distance to its coordinate frame.</em>
+  <br>
+  <img src="results/unitree.gif" alt="Unitree Go2 Tracking" height="360">
+</p>
 
 ## Workspace Structure
 
