@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="results/Dolbat.png" alt="DolbotX Logo" width="600">
+  <img src="results/Dolbat.png" alt="DolbotX Logo" width="400">
 </p>
 
 <h1 align="center">DolbotX</h1>
