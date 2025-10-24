@@ -49,7 +49,7 @@ The system operates on a distributed computing architecture, typically split bet
 </p>
 
 <p align="center">
-  <em><strong>Single-Area Drive:</strong> A <code>robot_vision/(season)_drive.py</code> node navigating a smooth path through a single drivable corridor.</em>
+  <em><strong>Single-Area Drive:</strong> A <code>robot_vision/(season)_drive.py</code> node navigating a smooth path through a single drivable region.</em>
   <br>
   <img src="results/single_area.gif" alt="Single-area drive visualization" height="360">
 </p>
@@ -74,6 +74,12 @@ The system operates on a distributed computing architecture, typically split bet
   <em><strong>ROKA/Enemy Detection:</strong> Result of the <code>robot_vision/spring_vision.py</code> node, distinguishing between allied (ROKA) and enemy units.</em>
   <br>
   <img src="results/roka_enemy.gif" alt="ROKA/Enemy Detection" height="360">
+</p>
+
+<p align="center">
+  <em><strong>Supply Box Detection:</strong> Result of the <code>robot_vision/summer_vision.py</code> node. The algorithm identifies a supply box, measures the distance to it using the Intel RealSense camera, and sends the distance data via a ROS2 service.</em>
+  <br>
+  <img src="results/supply.gif" alt="Supply Box Detection" height="360">
 </p>
 
 <p align="center">
@@ -118,8 +124,10 @@ The `robot_vision` package is the perception core of the robot, optimized for re
 **Hardware:**
 
 - NVIDIA Jetson Orin Nano
-- Cameras: Logitech C922 Pro, Abko APC 850, Topsync TS-B7WQ3O
-- Intel RealSense D435i Depth Camera
+- **Cameras:**
+  - **Vision Cameras (`camera1`, `camera2`):** Abko APC 850 & Topsync TS-B7WQ3O, used for visual marker and uniform recognition.
+  - **Driving Camera (`camera3`):** Logitech C922 Pro, dedicated to drivable area segmentation.
+  - **Depth Camera:** Intel RealSense D435i, used to measure distances for Pick and Place tasks and for tracking the Unitree Go2 robot.
 - Arduino Mega (Wheel Control) & Arduino Uno (LED Control)
 
 **Software:**
