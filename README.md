@@ -11,11 +11,13 @@
 </p>
 
 <p align="center">
-  <a href="#core-features">Core Features</a> •
   <a href="#visualizations">Visualizations</a> •
+  <a href="#core-features">Core Features</a> •
+  <a href="#workspace-structure">Workspace Structure</a>•
   <a href="#getting-started">Getting Started</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#workspace-structure">Workspace Structure</a>
+  <a href="#data-collection-workflow">Data Collection Workflow</a> •
+  <a href="#usage">Usage</a>
+
 </p>
 
 ## Introduction
@@ -27,18 +29,6 @@ The DolbotX repository was initially developed to tackle the five missions of Th
 DolbotX is a versatile autonomous robot platform built on ROS2, engineered for complex perception and navigation challenges. The robot is designed to excel in a variety of simulated "seasonal" environments (Spring, Summer, Fall, Winter), a robot tracking mission, and a target-following mode for a Unitree Go2.
 
 The system operates on a distributed computing architecture, typically split between a host laptop and an NVIDIA Jetson. It integrates multiple cameras, including an Intel RealSense depth camera, and interfaces with Arduino-based controllers for precise wheel motion and LED status indicators.
-
-## Core Features
-
-- **Seasonal Vision Algorithms:**
-  - **Spring (Friend-or-Foe):** Identifies allied ("ROKA") vs. enemy units from military uniform data and controls an LED indicator accordingly.
-  - **Summer (Multi-Task):** Concurrently recognizes traffic lights to issue 'stop'/'go' commands and detects supply boxes to trigger collection actions.
-  - **Fall (Marker Following):** Detects and follows a sequence of visual markers (`A`, `E`, `Heart`, etc.).
-  - **Winter (Snow Navigation):** Navigates snowy terrain by identifying a clear path from a fusion of standard track and snow segmentation.
-- **Object Following:** Tracks and follows a Unitree Go2 robot using a model of its rear profile, maintaining a precise distance with depth data.
-- **Drivable Area Segmentation:** Utilizes Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces across various terrains (colored tracks, sand, gravel, snow). It generates and follows smooth paths, even with multiple drivable regions in the frame.
-- **Multi-Camera Integration:** Fuses data from several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
-- **Hardware Integration:** Employs robust serial communication with Arduino controllers for low-level wheel and LED control.
 
 ## Visualizations
 
@@ -87,6 +77,18 @@ The system operates on a distributed computing architecture, typically split bet
   <br>
   <img src="results/unitree.gif" alt="Unitree Go2 Tracking" height="360">
 </p>
+
+## Core Features
+
+- **Seasonal Vision Algorithms:**
+  - **Spring (Friend-or-Foe):** Identifies allied ("ROKA") vs. enemy units from military uniform data and controls an LED indicator accordingly.
+  - **Summer (Multi-Task):** Concurrently recognizes traffic lights to issue 'stop'/'go' commands and detects supply boxes to trigger collection actions.
+  - **Fall (Marker Following):** Detects and follows a sequence of visual markers (`A`, `E`, `Heart`, etc.).
+  - **Winter (Snow Navigation):** Navigates snowy terrain by identifying a clear path from a fusion of standard track and snow segmentation.
+- **Object Following:** Tracks and follows a Unitree Go2 robot using a model of its rear profile, maintaining a precise distance with depth data.
+- **Drivable Area Segmentation:** Utilizes Bird's-Eye-View (BEV) and camera-space perception to identify and navigate drivable surfaces across various terrains (colored tracks, sand, gravel, snow). It generates and follows smooth paths, even with multiple drivable regions in the frame.
+- **Multi-Camera Integration:** Fuses data from several USB cameras and an Intel RealSense depth camera for comprehensive environmental perception.
+- **Hardware Integration:** Employs robust serial communication with Arduino controllers for low-level wheel and LED control.
 
 ## Workspace Structure
 
