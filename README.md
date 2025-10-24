@@ -9,13 +9,13 @@ The system operates on a distributed computing architecture, typically split bet
 ## DolbotX: Real-world Demonstration
 
 <p align="center">
-  <img src="competition_result.gif" alt="Competition run visualization" height="360">
+  <img src="results/competition_result.gif" alt="Competition run visualization" height="360">
   <br>
   <em><strong>Competition Run:</strong> End-to-end perception and planning from the <code>robot_vision/bezier_(season)_drive.py</code> pipeline.</em>
 </p>
 
 <p align="center">
-  <img src="single_area.gif" alt="Single-area drive visualization" height="360">
+  <img src="results/single_area.gif" alt="Single-area drive visualization" height="360">
   <br>
   <em><strong>Single-Area Drive:</strong> A <code>robot_vision/(season)_drive.py</code> node navigating a smooth path through a single drivable corridor.</em>
 </p>
@@ -26,6 +26,20 @@ The system operates on a distributed computing architecture, typically split bet
   </a>
   <br>
   <em><strong>Multi-Area Drive:</strong> Watch the planning stack adapt across multiple drivable regions on YouTube Shorts.</em>
+</p>
+
+## Visualizations
+
+<p align="center">
+  <img src="results/vision_marker.gif" alt="Vision Marker Following" height="360">
+  <br>
+  <em><strong>Vision Marker Following:</strong> The robot identifying and navigating towards a sequence of visual markers.</em>
+</p>
+
+<p align="center">
+  <img src="results/roka_enemy.gif" alt="ROKA/Enemy Detection" height="360">
+  <br>
+  <em><strong>ROKA/Enemy Detection:</strong> The robot distinguishing between allied (ROKA) and enemy units.</em>
 </p>
 
 ## Core Features
@@ -216,7 +230,7 @@ Before starting a seasonal mission, ensure the following core components are run
 #### Spring Mission
 
 <p align="center">
-  <img src="spring_node.png" alt="Spring Mission Node Graph" width="600">
+  <img src="results/spring_node.png" alt="Spring Mission Node Graph" width="600">
 </p>
 
 1. **Terminal 1: Launch Vision Node**
@@ -240,7 +254,7 @@ Before starting a seasonal mission, ensure the following core components are run
 #### Summer Mission
 
 <p align="center">
-  <img src="summer_node.png" alt="Summer Mission Node Graph" width="600">
+  <img src="results/summer_node.png" alt="Summer Mission Node Graph" width="600">
 </p>
 
 1. **Terminal 1: Launch Vision Node**
@@ -264,7 +278,7 @@ Before starting a seasonal mission, ensure the following core components are run
 #### Fall Mission
 
 <p align="center">
-  <img src="fall_node.png" alt="Fall Mission Node Graph" width="600">
+  <img src="results/fall_node.png" alt="Fall Mission Node Graph" width="600">
 </p>
 
 1. **Terminal 1: Launch Vision Node**
@@ -288,7 +302,7 @@ Before starting a seasonal mission, ensure the following core components are run
 #### Winter Mission
 
 <p align="center">
-  <img src="winter_node.png" alt="Winter Mission Node Graph" width="600">
+  <img src="results/winter_node.png" alt="Winter Mission Node Graph" width="600">
 </p>
 
 - **Launch Drive Node**
