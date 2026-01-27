@@ -37,11 +37,18 @@ class DistributedRealsenseNode(Node):
         self.get_logger().info(f"Relaying to:    {pub_topic}")
         
         # Communication
+        # QoS Profile for network streaming (Best Effort is crucial for video)
+        qos_profile = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
         self.sub = self.create_subscription(
             CompressedImage,
             sub_topic,
             self.image_callback,
-            10
+            qos_profile
         )
         self.pub = self.create_publisher(CompressedImage, pub_topic, 10)
         
