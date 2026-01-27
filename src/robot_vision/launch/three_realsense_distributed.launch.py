@@ -16,7 +16,7 @@ def generate_launch_description():
             executable='republish',
             name='republish_cam_1',
             arguments=['compressed', 'raw'],
-            remap_arguments=[
+            remappings=[
                 ('in/compressed', '/camera/cam_1/viz/compressed'),
                 ('out', '/camera/cam_1/viz/decoded')
             ],
@@ -36,7 +36,7 @@ def generate_launch_description():
             executable='republish',
             name='republish_cam_2',
             arguments=['compressed', 'raw'],
-            remap_arguments=[
+            remappings=[
                 ('in/compressed', '/camera/cam_2/viz/compressed'),
                 ('out', '/camera/cam_2/viz/decoded')
             ],
@@ -56,7 +56,7 @@ def generate_launch_description():
             executable='republish',
             name='republish_cam_3',
             arguments=['compressed', 'raw'],
-            remap_arguments=[
+            remappings=[
                 ('in/compressed', '/camera/cam_3/viz/compressed'),
                 ('out', '/camera/cam_3/viz/decoded')
             ],
