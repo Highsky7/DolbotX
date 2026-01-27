@@ -11,6 +11,17 @@ def generate_launch_description():
             output='screen',
             parameters=[{'camera_namespace': '/camera/cam_1/'}]
         ),
+        Node(
+            package='image_transport',
+            executable='republish',
+            name='republish_cam_1',
+            arguments=['compressed', 'raw'],
+            remap_arguments=[
+                ('in/compressed', '/camera/cam_1/viz/compressed'),
+                ('out', '/camera/cam_1/viz/decoded')
+            ],
+            output='screen'
+        ),
         
         # Node for Camera 2
         Node(
@@ -20,6 +31,17 @@ def generate_launch_description():
             output='screen',
             parameters=[{'camera_namespace': '/camera/cam_2/'}]
         ),
+        Node(
+            package='image_transport',
+            executable='republish',
+            name='republish_cam_2',
+            arguments=['compressed', 'raw'],
+            remap_arguments=[
+                ('in/compressed', '/camera/cam_2/viz/compressed'),
+                ('out', '/camera/cam_2/viz/decoded')
+            ],
+            output='screen'
+        ),
         
         # Node for Camera 3
         Node(
@@ -28,5 +50,16 @@ def generate_launch_description():
             name='realsense_processor_3',
             output='screen',
             parameters=[{'camera_namespace': '/camera/cam_3/'}]
+        ),
+        Node(
+            package='image_transport',
+            executable='republish',
+            name='republish_cam_3',
+            arguments=['compressed', 'raw'],
+            remap_arguments=[
+                ('in/compressed', '/camera/cam_3/viz/compressed'),
+                ('out', '/camera/cam_3/viz/decoded')
+            ],
+            output='screen'
         )
     ])
