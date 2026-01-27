@@ -237,3 +237,6 @@ AMENT_IGNORE
 *.pt
 *.pth
 *.onnx
+
+# Serena
+.serena/
